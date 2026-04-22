@@ -1412,14 +1412,22 @@ class Meson(Particle):
         self.key = None
         self.operator = operator
         self.dagger = source
+        # Store init values for min-merge with load values
+        self._init_usedNe = usedNe
+        self._init_usedNe_l = usedNe_l
+        self._init_usedNe_r = usedNe_r
+        self._load_usedNe = None
+        self._load_usedNe_l = None
+        self._load_usedNe_r = None
+        # Effective values (init and load merged by min)
+        self.usedNe = usedNe
+        # usedNe_l/r: explicit values take priority over usedNe fallback
         if usedNe_l is None:
             usedNe_l = usedNe
         if usedNe_r is None:
             usedNe_r = usedNe
         self.usedNe_l = usedNe_l
         self.usedNe_r = usedNe_r
-        # Keep compatibility with existing code that reads `usedNe`.
-        self.usedNe = usedNe
         self.outward = 1
         self.inward = 1
         self.smeared = True
@@ -1427,6 +1435,24 @@ class Meson(Particle):
         # cache is shared among all instances of Meson.
         backend = get_backend()
         self.cache: Dict[int, backend.ndarray] = {}
+
+    @staticmethod
+    def _min_merge(init_val, load_val, fallback=None):
+        vals = [v for v in (init_val, load_val) if v is not None]
+        if vals:
+            return min(vals)
+        return fallback
+
+    def _effective_usedNe(self):
+        return self._min_merge(self._init_usedNe, self._load_usedNe)
+
+    def _effective_usedNe_l(self):
+        base = self._effective_usedNe()
+        return self._min_merge(self._init_usedNe_l, self._load_usedNe_l, fallback=base)
+
+    def _effective_usedNe_r(self):
+        base = self._effective_usedNe()
+        return self._min_merge(self._init_usedNe_r, self._load_usedNe_r, fallback=base)
 
     def _release_resources(self):
         self.elemental_data = None
@@ -1463,15 +1489,17 @@ class Meson(Particle):
         return str
 
     def load(self, key, usedNe: int = None, usedNe_l: int = None, usedNe_r: int = None):
-
-        if usedNe_r is not None:
-            self.usedNe_r = usedNe_r
+        # Store load values
+        if usedNe is not None:
+            self._load_usedNe = usedNe
         if usedNe_l is not None:
-            self.usedNe_l = usedNe_l
-        elif usedNe is not None:
-            self.usedNe = usedNe
-        else:
-            self.usedNe = None
+            self._load_usedNe_l = usedNe_l
+        if usedNe_r is not None:
+            self._load_usedNe_r = usedNe_r
+        # Compute effective values (min of init and load)
+        self.usedNe = self._effective_usedNe()
+        self.usedNe_l = self._effective_usedNe_l()
+        self.usedNe_r = self._effective_usedNe_r()
         if self.key != key:
             self._release_resources()
             self.key = key
@@ -1982,6 +2010,8 @@ class Propagator:
         self.cache = None
         self.cache_dagger = None
         self.cached_time = None
+        self._init_usedNe = usedNe
+        self._load_usedNe = None
         self.usedNe = usedNe
 
     def _release_resources(self):
@@ -2013,12 +2043,17 @@ class Propagator:
         except Exception:
             pass
 
+    def _effective_usedNe(self):
+        vals = [v for v in (self._init_usedNe, self._load_usedNe) if v is not None]
+        return min(vals) if vals else None
+
     def load(self, key, usedNe: int = None):
         if self.key != key:
             # self._release_resources()
             self.key = key
             if usedNe is not None:
-                self.usedNe = usedNe
+                self._load_usedNe = usedNe
+            self.usedNe = self._effective_usedNe()
             self.perambulator_data = self.perambulator.load(key)
 
     def get(self, t_source, t_sink):
@@ -2068,14 +2103,21 @@ class PropagatorLocal:
         self.key = None
         self.Lt = Lt
         self.cache = None
+        self._init_usedNe = usedNe
+        self._load_usedNe = None
         self.usedNe = usedNe
+
+    def _effective_usedNe(self):
+        vals = [v for v in (self._init_usedNe, self._load_usedNe) if v is not None]
+        return min(vals) if vals else None
 
     def load(self, key, usedNe: int = None):
         if self.key != key:
             self.key = key
             self.perambulator_data = self.perambulator.load(key)
             if usedNe is not None:
-                self.usedNe = usedNe
+                self._load_usedNe = usedNe
+            self.usedNe = self._effective_usedNe()
             self._make_cache()
 
     def _make_cache(self):
@@ -3470,6 +3512,10 @@ def compute_diagrams_multitime(
             idx = 0
             operands_data = []
 
+            # Track min usedNe per vertex side across all connected propagators.
+            # vertex_min_ne[v_idx] = {"l": min_ne_l, "r": min_ne_r}
+            vertex_min_ne = {}
+
             if debug:
                 print(f"  Propagators (operands[0]):")
             for prop_idx, item in enumerate(operands[0]):
@@ -3497,9 +3543,36 @@ def compute_diagrams_multitime(
                 usedNe_sink = getattr(
                     snk_vertex, "usedNe_l", getattr(snk_vertex, "usedNe", None)
                 )
-                print("usedNe_source, usedNe_sink", usedNe_source, usedNe_sink)
+
+                # Min-merge: propagator usedNe vs vertex usedNe on each side
+                prop_usedNe = getattr(propagator, "usedNe", None)
+                if prop_usedNe is not None:
+                    if usedNe_source is not None:
+                        usedNe_source = min(usedNe_source, prop_usedNe)
+                    else:
+                        usedNe_source = prop_usedNe
+                    if usedNe_sink is not None:
+                        usedNe_sink = min(usedNe_sink, prop_usedNe)
+                    else:
+                        usedNe_sink = prop_usedNe
+
                 usedNp_source = getattr(src_vertex, "usedNp", None)
                 usedNp_sink = getattr(snk_vertex, "usedNp", None)
+
+                # Update per-vertex min Ne tracking
+                for v_idx, ne_val, side in [
+                    (item[1], usedNe_source, "r"),
+                    (item[2], usedNe_sink, "l"),
+                ]:
+                    if ne_val is not None:
+                        if v_idx not in vertex_min_ne:
+                            vertex_min_ne[v_idx] = {}
+                        if side in vertex_min_ne[v_idx]:
+                            vertex_min_ne[v_idx][side] = min(
+                                vertex_min_ne[v_idx][side], ne_val
+                            )
+                        else:
+                            vertex_min_ne[v_idx][side] = ne_val
 
                 if debug:
                     print(
@@ -3513,7 +3586,7 @@ def compute_diagrams_multitime(
                         prop_data = propagator.get(
                             time_list[item[1]], time_list[item[2]]
                         )
-                        # Slice both ends' usedNe
+                        # Slice both ends' usedNe (min-merged with propagator)
                         if usedNe_sink is not None:
                             prop_data = prop_data[..., :usedNe_sink, :]
                         if usedNe_source is not None:
@@ -3618,6 +3691,14 @@ def compute_diagrams_multitime(
                 # Get vertex data based on type
                 if vertex_type == "V2V":
                     vertex_data = vertex.get(time_list[item])
+                    # Slice vertex Ne dims to match min-merged propagator Ne
+                    if item in vertex_min_ne:
+                        min_l = vertex_min_ne[item].get("l")
+                        min_r = vertex_min_ne[item].get("r")
+                        if min_l is not None:
+                            vertex_data = vertex_data[..., :min_l, :]
+                        if min_r is not None:
+                            vertex_data = vertex_data[..., :, :min_r]
                     if debug:
                         print(f"      Called vertex[{item}].get(t={time_list[item]})")
                 elif vertex_type == "V2P":
@@ -3668,9 +3749,6 @@ def compute_diagrams_multitime(
                         f"    operand[{op_idx}]: shape={op.shape if hasattr(op, 'shape') else type(op)}"
                     )
                 print(f"  Attempting contraction...")
-            for op in operands_data:
-                print(op.shape)
-            print(final_subscripts)
             result = contract(final_subscripts, *operands_data)
             diagram_value[-1] = diagram_value[-1] * result
 
