@@ -1,12 +1,15 @@
 import unittest
 import sys
 import os
-from sympy import S, Symbol, Add, Mul
+import numpy as np
+from sympy import symbols, Add, Mul, S, simplify
 
 # Add the project root to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from lattice.flavor_structure import Tag, Qurak, Propagator, HadronFlavorStructure, quark_contract, _quark_contract
+from lattice.base_types import Tag, Flavor
+from lattice.flavor_structure import Tag, Qurak, Propagator, HadronFlavorStructure
+from lattice.quark_diagram import quark_contract, _quark_contract
 
 
 class TestTag(unittest.TestCase):
@@ -155,9 +158,8 @@ class TestQuarkContract(unittest.TestCase):
         meson1 = HadronFlavorStructure("ud", time=0)
         meson2 = HadronFlavorStructure("du", time=1)
 
-        expr = meson1 * meson2
+        expr = meson1 * meson1.conjugate()
         result = quark_contract(expr, self.particles)
-
         # Verify result is not None and has expected structure
         self.assertIsNotNone(result)
 
@@ -182,6 +184,33 @@ class TestQuarkContract(unittest.TestCase):
         # Verify result is not None and has expected structure
         self.assertIsNotNone(result)
         self.assertEqual(result.diagram.adjacency_matrix, [[1, 0], [0, 1]])
+
+    def test_complicated_contraction(self):
+        charmed = [
+            HadronFlavorStructure("dc"),
+            HadronFlavorStructure("uc"),
+        ]
+
+        charmed_bar = [
+            HadronFlavorStructure("cu"),
+            -HadronFlavorStructure("cd"),
+        ]
+
+        hidden_charm = HadronFlavorStructure("cc")
+
+        iso_scalar = HadronFlavorStructure("uu") + HadronFlavorStructure("dd")
+        iso_vector = [
+            HadronFlavorStructure("du"),
+            HadronFlavorStructure("uu") - HadronFlavorStructure("dd"),
+            -HadronFlavorStructure("ud"),
+        ]
+
+        DDbar_isoscalar = charmed[0] * charmed_bar[1] - charmed[1] * charmed_bar[0]
+        DDbar_isovector = charmed[0] * charmed_bar[1] + charmed[1] * charmed_bar[0]
+        DbarD_isoscalar = -charmed_bar[0] * charmed[1] + charmed_bar[1] * charmed[0]
+        DbarD_isovector = charmed_bar[0] * charmed[1] + charmed_bar[1] * charmed[0]
+        I0_Cm = (DDbar_isoscalar - DbarD_isoscalar) * (1 / S(2))
+        expr = I0_Cm
 
 
 class TestQuarkContractInternal(unittest.TestCase):

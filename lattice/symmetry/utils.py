@@ -54,7 +54,6 @@ def multiplicationTable(matrix_group):
     # Perform matrix multiplication and fill multiplication table
     for i in range(n):
         for j in range(n):
-            print(i, j)
             result_matrix = matrix_group[keys[i]] @ matrix_group[keys[j]]  # Calculate matrix multiplication
             # Find the index corresponding to multiplication result
             for k, key in enumerate(keys):

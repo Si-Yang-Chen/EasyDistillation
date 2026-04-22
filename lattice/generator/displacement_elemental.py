@@ -93,6 +93,7 @@ class DisplacementElementalGenerator:
             left = V
             for imom, mom in enumerate(self.momentum_list):
                 VPV[dist, imom] += contract("zyx,ezyxc,fzyxc->ef", momentum_phase.get(mom), left.conj(), right)
+                VPV[dist, imom] += contract("zyx,ezyxc,fzyxc->ef", momentum_phase.get(mom), right.conj(), left)
         return VPV
 
     def project_SU3(self):

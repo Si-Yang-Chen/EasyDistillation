@@ -27,16 +27,24 @@ def _Laplacian(F, U, U_dag, latt_size):
 
 
 class EigenvectorGenerator:
-    def __init__(self, latt_size: List[int], gauge_field: GaugeField, Ne: int, tol: float) -> None:
+    def __init__(
+        self, latt_size: List[int], gauge_field: GaugeField, Ne: int, tol: float
+    ) -> None:
         backend = get_backend()
         self.kernel = None
         if backend.__name__ == "cupy":
             import os
 
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "stout_smear.cu")) as f:
+            with open(
+                os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), "stout_smear.cu"
+                )
+            ) as f:
                 code = f.read()
             self.kernel = backend.RawModule(
-                code=code, options=("--std=c++11",), name_expressions=("stout_smear<double>",)
+                code=code,
+                options=("--std=c++11",),
+                name_expressions=("stout_smear<double>",),
             ).get_function(
                 "stout_smear<double>"
             )  # TODO: More template instance.
@@ -48,7 +56,9 @@ class EigenvectorGenerator:
 
     def load(self, key: str):
         self._U = self.gauge_field.load(key)[:].transpose(4, 0, 1, 2, 3, 5, 6).copy()
-        print(f"{self.gauge_field.load(key).sizeInByte/1024**2/self.gauge_field.load(key).timeInSec:.3f} MB/s")
+        print(
+            f"{self.gauge_field.load(key).sizeInByte/1024**2/self.gauge_field.load(key).timeInSec:.3f} MB/s"
+        )
         self._gauge_field_path = self.gauge_field.load(key).file
         self.gauge_field.data = None  # after gauge_field.data load to self._U, free it.
 
@@ -58,7 +68,10 @@ class EigenvectorGenerator:
         Uinv = backend.linalg.inv(U)
         while (
             backend.max(backend.abs(U - contract("...ab->...ba", Uinv.conj()))) > 1e-15
-            or backend.max(backend.abs(contract("...ab,...cb", U, U.conj()) - backend.identity(Nc))) > 1e-15
+            or backend.max(
+                backend.abs(contract("...ab,...cb", U, U.conj()) - backend.identity(Nc))
+            )
+            > 1e-15
         ):
             U = 0.5 * (U + contract("...ab->...ba", Uinv.conj()))
             Uinv = backend.linalg.inv(U)
@@ -107,8 +120,13 @@ class EigenvectorGenerator:
             w_large = w[large]
             sinc_w[large] = backend.sin(w_large) / w_large
             f_denom = 1 / (9 * u_sq - w_sq)
-            f0 = ((u_sq - w_sq) * e_2iu + e_iu * (8 * u_sq * cos_w + 2j * u * (3 * u_sq + w_sq) * sinc_w)) * f_denom
-            f1 = (2 * u * e_2iu - e_iu * (2 * u * cos_w - 1j * (3 * u_sq - w_sq) * sinc_w)) * f_denom
+            f0 = (
+                (u_sq - w_sq) * e_2iu
+                + e_iu * (8 * u_sq * cos_w + 2j * u * (3 * u_sq + w_sq) * sinc_w)
+            ) * f_denom
+            f1 = (
+                2 * u * e_2iu - e_iu * (2 * u * cos_w - 1j * (3 * u_sq - w_sq) * sinc_w)
+            ) * f_denom
             f2 = (e_2iu - e_iu * (cos_w + 3j * u * sinc_w)) * f_denom
             f0[parity] = f0[parity].conj()
             f1[parity] = -f1[parity].conj()
@@ -130,7 +148,11 @@ class EigenvectorGenerator:
             for mu in range(Nd - 1):
                 for nu in range(Nd - 1):
                     if mu != nu:
-                        Q[mu] += U[nu] @ backend.roll(U[mu], -1, 3 - nu) @ backend.roll(U_dag[nu], -1, 3 - mu)
+                        Q[mu] += (
+                            U[nu]
+                            @ backend.roll(U[mu], -1, 3 - nu)
+                            @ backend.roll(U_dag[nu], -1, 3 - mu)
+                        )
                         Q[mu] += (
                             backend.roll(U_dag[nu], +1, 3 - nu)
                             @ backend.roll(U[mu], +1, 3 - nu)
@@ -139,7 +161,9 @@ class EigenvectorGenerator:
 
             Q = rho * Q @ U_dag
             Q = 0.5j * (Q.transpose(0, 1, 2, 3, 4, 6, 5).conj() - Q)
-            contract("...aa->...a", Q)[:] -= 1 / Nc * contract("...aa->...", Q)[..., None]
+            contract("...aa->...a", Q)[:] -= (
+                1 / Nc * contract("...aa->...", Q)[..., None]
+            )
             Q_sq = Q @ Q
             c0 = contract("...aa->...", Q @ Q_sq).real / 3
             c1 = contract("...aa->...", Q_sq).real / 2
@@ -172,13 +196,21 @@ class EigenvectorGenerator:
                 + e_iu_real * 2 * u * (3 * u_sq + w_sq) * sinc_w
             ) * f_denom
             f1_real = (
-                2 * u * e_2iu_real - e_iu_real * 2 * u * cos_w + e_iu_imag * (3 * u_sq - w_sq) * sinc_w
+                2 * u * e_2iu_real
+                - e_iu_real * 2 * u * cos_w
+                + e_iu_imag * (3 * u_sq - w_sq) * sinc_w
             ) * f_denom
             f1_imag = (
-                2 * u * e_2iu_imag + e_iu_imag * 2 * u * cos_w + e_iu_real * (3 * u_sq - w_sq) * sinc_w
+                2 * u * e_2iu_imag
+                + e_iu_imag * 2 * u * cos_w
+                + e_iu_real * (3 * u_sq - w_sq) * sinc_w
             ) * f_denom
-            f2_real = (e_2iu_real - e_iu_real * cos_w - e_iu_imag * 3 * u * sinc_w) * f_denom
-            f2_imag = (e_2iu_imag + e_iu_imag * cos_w - e_iu_real * 3 * u * sinc_w) * f_denom
+            f2_real = (
+                e_2iu_real - e_iu_real * cos_w - e_iu_imag * 3 * u * sinc_w
+            ) * f_denom
+            f2_imag = (
+                e_2iu_imag + e_iu_imag * cos_w - e_iu_real * 3 * u * sinc_w
+            ) * f_denom
             f0_imag[parity] *= -1
             f1_real[parity] *= -1
             f2_imag[parity] *= -1
@@ -196,7 +228,9 @@ class EigenvectorGenerator:
 
         for _ in range(nstep):
             U_in = U.copy()
-            self.kernel((Lx * Ly * Lz, Nd - 1, 1), (Lt, 1, 1), (U, U_in, rho, Lx, Ly, Lz, Lt))
+            self.kernel(
+                (Lx * Ly * Lz, Nd - 1, 1), (Lt, 1, 1), (U, U_in, rho, Lx, Ly, Lz, Lt)
+            )
 
         self._U[: Nd - 1] = U
 
@@ -212,7 +246,7 @@ class EigenvectorGenerator:
         backend = get_backend()
         self._U = backend.asarray(gauge.lexico().reshape(Nd, Lt, Lz, Ly, Lx, Nc, Nc))
 
-    def stout_smear(self, nstep:int, rho:float):
+    def stout_smear(self, nstep: int, rho: float):
         from ..backend import check_QUDA
 
         backend = get_backend()
@@ -241,8 +275,12 @@ class EigenvectorGenerator:
 
         U = backend.asarray(self._U[: Nd - 1, t])
         U_dag = U.transpose(0, 1, 2, 3, 5, 4).conj()
-        Laplacian = functools.partial(_Laplacian, U=U, U_dag=U_dag, latt_size=self.latt_size)
-        A = linalg.LinearOperator((Lz * Ly * Lx * Nc, Lz * Ly * Lx * Nc), matvec=Laplacian, matmat=Laplacian)
+        Laplacian = functools.partial(
+            _Laplacian, U=U, U_dag=U_dag, latt_size=self.latt_size
+        )
+        A = linalg.LinearOperator(
+            (Lz * Ly * Lx * Nc, Lz * Ly * Lx * Nc), matvec=Laplacian, matmat=Laplacian
+        )
         evals, evecs = linalg.eigsh(A, self.Ne, which="SA", tol=self.tol)
         evecs = evecs.transpose(1, 0).reshape(self.Ne, -1)
 
@@ -256,18 +294,38 @@ class EigenvectorGenerator:
             evecs *= backend.exp(-1.0j * renorm_phase)[:, None]
         return evecs.reshape(self.Ne, Lz, Ly, Lx, Nc), evals
 
-    def laplacian_quda(self, t: int, apply_renorm_phase: bool, polynomial_degree: int, lambda_cut: float):
+    def laplacian_quda(
+        self,
+        t: int,
+        apply_renorm_phase: bool,
+        polynomial_degree: int,
+        lambda_cut: float,
+    ):
         import numpy
         from pyquda.pyquda import QudaEigParam, eigensolveQuda
-        from pyquda.enum_quda import QudaDslashType, QudaEigType, QudaBoolean, QudaEigSpectrumType
-        from pyquda_utils.core import LatticeGauge, LatticeInfo, MultiLatticeStaggeredFermion, cb2
+        from pyquda.enum_quda import (
+            QudaDslashType,
+            QudaEigType,
+            QudaBoolean,
+            QudaEigSpectrumType,
+        )
+        from pyquda_utils.core import (
+            LatticeGauge,
+            LatticeInfo,
+            MultiLatticeStaggeredFermion,
+            cb2,
+        )
 
         backend = get_backend()
         Lx, Ly, Lz, _ = self.latt_size
         latt_info = LatticeInfo([Lx, Ly, Lz, 1])
-        gauge_tmp = LatticeGauge(latt_info, backend.asarray(cb2(self._U[:, t : t + 1].get(), [1, 2, 3, 4])))
+        gauge_tmp = LatticeGauge(
+            latt_info, backend.asarray(cb2(self._U[:, t : t + 1].get(), [1, 2, 3, 4]))
+        )
         gauge_tmp.gauge_dirac.setVerbosity(0)
-        gauge_tmp.gauge_dirac.invert_param.dslash_type = QudaDslashType.QUDA_LAPLACE_DSLASH
+        gauge_tmp.gauge_dirac.invert_param.dslash_type = (
+            QudaDslashType.QUDA_LAPLACE_DSLASH
+        )
         gauge_tmp.gauge_dirac.invert_param.mass = -1
         gauge_tmp.gauge_dirac.invert_param.kappa = 1 / (2 * (Nd - 1))
         gauge_tmp.gauge_dirac.invert_param.laplace3D = 3
@@ -307,19 +365,29 @@ class EigenvectorGenerator:
         evals *= 2 * (Nd - 1)
         if apply_renorm_phase:
             renorm_phase = backend.angle(evecs.data[:, 0, 0, 0, 0, 0, 0])
-            evecs.data *= backend.exp(-1.0j * renorm_phase)[:, None, None, None, None, None, None]
+            evecs.data *= backend.exp(-1.0j * renorm_phase)[
+                :, None, None, None, None, None, None
+            ]
         evecs = evecs.lexico().reshape(n_ev, Lz, Ly, Lx, Nc)
         return backend.asarray(evecs), backend.asarray(evals)
 
     def laplacian_quda_scipy(self, t: int, apply_renorm_phase: bool):
         from cupyx.scipy.sparse import linalg
-        from pyquda_utils.core import LatticeInfo, LatticeGauge, LatticeStaggeredFermion, cb2, lexico
+        from pyquda_utils.core import (
+            LatticeInfo,
+            LatticeGauge,
+            LatticeStaggeredFermion,
+            cb2,
+            lexico,
+        )
 
         backend = get_backend()
         Lx, Ly, Lz, _ = self.latt_size
         latt_info = LatticeInfo([Lx, Ly, Lz, 1])
         Lx, Ly, Lz, _ = latt_info.size
-        gauge_tmp = LatticeGauge(latt_info, backend.asarray(cb2(self._U[:, t : t + 1].get(), [1, 2, 3, 4])))
+        gauge_tmp = LatticeGauge(
+            latt_info, backend.asarray(cb2(self._U[:, t : t + 1].get(), [1, 2, 3, 4]))
+        )
         gauge_tmp.ensurePureGauge()
         gauge_tmp.pure_gauge.loadGauge(gauge_tmp)
 
@@ -327,12 +395,14 @@ class EigenvectorGenerator:
             x = x.reshape(Lz * Ly * Lx * Nc, -1)
             b = backend.zeros_like(x, "<c16")
             for i in range(x.shape[1]):
-                b[:, i] = gauge_tmp.pure_gauge.laplace(LatticeStaggeredFermion(latt_info, x[:, i]), 3).data.reshape(
-                    Lz * Ly * Lx * Nc
-                )
+                b[:, i] = gauge_tmp.pure_gauge.laplace(
+                    LatticeStaggeredFermion(latt_info, x[:, i]), 3
+                ).data.reshape(Lz * Ly * Lx * Nc)
             return b
 
-        A = linalg.LinearOperator((Lz * Ly * Lx * Nc, Lz * Ly * Lx * Nc), matvec=Laplacian, matmat=Laplacian)
+        A = linalg.LinearOperator(
+            (Lz * Ly * Lx * Nc, Lz * Ly * Lx * Nc), matvec=Laplacian, matmat=Laplacian
+        )
         evals, evecs = linalg.eigsh(A, self.Ne, which="SA", tol=self.tol)
         evals *= 2 * (Nd - 1)
         evecs = evecs.transpose(1, 0).reshape(self.Ne, -1)
@@ -349,17 +419,29 @@ class EigenvectorGenerator:
             evecs *= backend.exp(-1.0j * renorm_phase)[:, None]
         evecs = evecs.get()
         for i in range(self.Ne):
-            evecs[i] = lexico(evecs[i].reshape(2, 1, Lz, Ly, Lx // 2, Nc), [0, 1, 2, 3, 4]).reshape(-1)
+            evecs[i] = lexico(
+                evecs[i].reshape(2, 1, Lz, Ly, Lx // 2, Nc), [0, 1, 2, 3, 4]
+            ).reshape(-1)
         evecs = evecs.reshape(self.Ne, Lz, Ly, Lx, Nc)
         return backend.asarray(evecs), evals
 
-    def calc(self, t: int, apply_renorm_phase: bool = True, polynomial_degree: int = 0, lambda_cut: float = 0.0):
+    def calc(
+        self,
+        t: int,
+        apply_renorm_phase: bool = True,
+        polynomial_degree: int = 0,
+        lambda_cut: float = 0.0,
+    ):
         backend = get_backend()
         # Don't use QUDA's eigensolver because of some performance regression.
         if backend.__name__ == "cupy" and check_QUDA():
             if polynomial_degree > 0 and lambda_cut > 0:
-                print("Using quda Laplacian and quda solver with Chebyshev polynomial acceleration.")
-                return self.laplacian_quda(t, apply_renorm_phase, polynomial_degree, lambda_cut)
+                print(
+                    "Using quda Laplacian and quda solver with Chebyshev polynomial acceleration."
+                )
+                return self.laplacian_quda(
+                    t, apply_renorm_phase, polynomial_degree, lambda_cut
+                )
             else:
                 print(f"Using quda Laplacian and {backend.__name__} solver.")
                 return self.laplacian_quda_scipy(t, apply_renorm_phase)
@@ -368,3 +450,81 @@ class EigenvectorGenerator:
             return self.laplacian_cupy_numpy(t, apply_renorm_phase)
         else:
             raise NotImplementedError(f"Unsupport backend = {backend.__name__}.")
+
+
+def get_overlap_matrix(
+    eigenvector_data, point_data, usedNe=None, usedNp=None, debug=False
+):
+    """
+    Compute overlap matrix M_{xi,a} = <eta_x, a | xi_i>.
+
+    This matrix connects spatial point basis to eigenvector basis.
+    Computes for specified number of eigenvectors (low modes).
+
+    Args:
+        eigenvector_data: shape [Lt, Ne, Lz, Ly, Lx, Nc] - eigenvector field on lattice
+        point_data: shape [Np, Lt, 3] - point source coordinates (x,y,z)
+        usedNe: number of eigenvectors to use (default: all)
+        usedNp: number of points to use (default: all)
+        debug: enable debug output
+
+    Returns:
+        overlap_matrix: shape [Lt, Ne, Np, Nc]
+    """
+    from ..backend import get_backend, log_gpu_memory
+
+    log_gpu_memory("get_overlap_matrix(before)")
+    if debug:
+        print(f"\nget_overlap_matrix(): Computing overlap matrix")
+        print(f"  usedNe: {usedNe}, usedNp: {usedNp}")
+
+    # Slice eigenvector and point data according to usedNe and usedNp
+    if usedNe is not None:
+        eigenvector_data = eigenvector_data[:, :usedNe, :, :, :, :]
+    if usedNp is not None:
+        point_data = point_data[:usedNp, :, :]
+
+    # Infer dimensions if not provided
+    if usedNe is None:
+        usedNe = eigenvector_data.shape[1]
+    if usedNp is None:
+        usedNp = point_data.shape[0]
+
+    if debug:
+        print(f"  eigenvector_data.shape: {eigenvector_data.shape}")
+        print(f"  point_data.shape: {point_data.shape}")
+
+    backend = get_backend()
+    Lt, Ne, Lz, Ly, Lx, Nc = eigenvector_data.shape
+    Np = point_data.shape[0]
+
+    # Extract eigenvector values at point positions (vectorized)
+    # point_data[p, t, :] = [x, y, z] contains coordinates
+    # eigenvector_data[t, e, z, y, x, c] contains field values
+    # We want M[t, e, p, c] = eigenvector_data[t, e, z_p, y_p, x_p, c]
+
+    # Fully vectorized extraction using advanced indexing
+    # point_data shape: [Np, Lt, 3] -> transpose to [Lt, Np, 3] for easier indexing
+    coords_all = point_data.transpose(1, 0, 2).astype(int)  # [Lt, Np, 3]
+    x_coords_all = coords_all[:, :, 0]  # [Lt, Np]
+    y_coords_all = coords_all[:, :, 1]  # [Lt, Np]
+    z_coords_all = coords_all[:, :, 2]  # [Lt, Np]
+
+    # Create time indices for each (t, p) pair: [Lt, Np] where each row is [t, t, ..., t]
+    t_indices = backend.arange(Lt)[:, None].repeat(Np, axis=1)  # [Lt, Np]
+
+    # Extract eigenvector_data[t, e, z[p], y[p], x[p], c] for all (t, p) pairs
+    # Using advanced indexing: when multiple arrays of the same shape are used, they broadcast together
+    # All indices are [Lt, Np] shape, so result will be [Lt, Np, Ne, Nc]
+    # Then transpose (0, 2, 1, 3) to get [Lt, Ne, Np, Nc]
+    overlap = eigenvector_data[
+        t_indices, :, z_coords_all, y_coords_all, x_coords_all, :
+    ].transpose(
+        0, 2, 1, 3
+    )  # [Lt, Ne, Np, Nc]
+
+    if debug:
+        print(f"  Computed overlap_matrix shape: {overlap.shape}")
+
+    log_gpu_memory("get_overlap_matrix(after)")
+    return overlap

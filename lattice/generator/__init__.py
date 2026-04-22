@@ -1,7 +1,8 @@
 from .eigenvector import EigenvectorGenerator
 from .noisevector import NoisevectorGenerator
-from .elemental import ElementalGenerator
+from .elemental import ElementalGenerator, CurrentElementalGenerator
 from .displacement_elemental import DisplacementElementalGenerator
 from .perambulator import PerambulatorGenerator
 from .generalized_perambulator import GeneralizedPerambulatorGenerator
 from .density_perambulator import DensityPerambulatorGenerator
+from .sparsened_point import generate_sparsened_points

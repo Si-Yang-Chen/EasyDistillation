@@ -50,27 +50,22 @@ from sympy.matrices import Matrix
 
 def collect_product_basis(exprs: list[Expr]) -> list[Expr]:
     """Collect all unique product terms as basis vectors"""
-    basis_map = {}  # {frozenset(product_factors): index}
+    basis_list = []  # {frozenset(product_factors): index}
 
     for expr in exprs:
         terms = Add.make_args(expr)
         for term in terms:
             factors = Mul.make_args(term)
             coeff = S(1)
-            product_factors = []
+            basis = S(1)
             for factor in factors:
                 if isinstance(factor, Symbol):
-                    product_factors.append(factor.name)
+                    basis *= factor
                 else:
                     coeff *= factor
-            # coeff, factors = term.as_coeff_mul()
-            # Extract Operator product combinations
-            product_factors = tuple(product_factors)
-            # Assign basis vector index to each unique product
-            key = product_factors
-            if key not in basis_map:
-                basis_map[key] = None
-    return list(basis_map.keys())
+            if basis not in basis_list:
+                basis_list.append(basis)
+    return basis_list
 
 
 def build_coefficient_matrix(exprs: list[Expr], basis_map: dict) -> list[list]:
@@ -84,18 +79,15 @@ def build_coefficient_matrix(exprs: list[Expr], basis_map: dict) -> list[list]:
         for term in terms:
             factors = Mul.make_args(term)
             coeff = S(1)
-            product_factors = []
-
+            basis = S(1)
             for factor in factors:
                 if isinstance(factor, Symbol):
-                    product_factors.append(factor.name)
+                    basis *= factor
                 else:
                     coeff *= factor
 
-            product_factors = tuple(product_factors)
-
-            if product_factors in basis_map:
-                idx = basis_map[product_factors]
+            if str(basis) in basis_map:
+                idx = basis_map[str(basis)]
                 row[idx] += coeff  # Use SymPy coefficients for exact computation
 
         matrix.append(row)
@@ -120,7 +112,7 @@ def find_linear_independent_exprs(exprs: list[Expr]) -> list[Expr]:
 
     # Collect basis vectors
     basis = collect_product_basis(filtered)
-    basis_map = {vec: idx for idx, vec in enumerate(basis)}
+    basis_map = {str(vec): idx for idx, vec in enumerate(basis)}
 
     # Build coefficient matrix
     coeff_matrix = build_coefficient_matrix(filtered, basis_map)
@@ -129,21 +121,32 @@ def find_linear_independent_exprs(exprs: list[Expr]) -> list[Expr]:
 
     # Execute Row Reduced Echelon Form (RREF)
     rref_matrix, pivots = M.rref()
-
-    # Find indices of linearly independent expressions
-    independent_indices = []
-    for i, has_pivot in enumerate(pivots):
-        if i < len(filtered):
-            independent_indices.append(i)
-
-    # Extract linearly independent expressions from the original list
-    independent_exprs = [filtered[i] for i in independent_indices]
+    independent_exprs = []
+    for i in range(len(pivots)):
+        result = S(0)
+        for j in range(len(basis)):
+            term = rref_matrix[i, j]
+            result += term * basis[j]
+        independent_exprs.append(result)
 
     # If no linearly independent expressions found, return empty list
     if not independent_exprs:
         return []
 
     return independent_exprs
+
+
+def expr_simplify(expr):
+    """
+    Simplify expression using sympy's simplify function
+    """
+    basis = collect_product_basis([expr])
+    basis_map = {str(vec): idx for idx, vec in enumerate(basis)}
+
+    # Build coefficient matrix
+    coeff_matrix = build_coefficient_matrix([expr], basis_map)
+    print(coeff_matrix)
+    print(basis_map)
 
 
 def convert_pow_to_mul(expr):

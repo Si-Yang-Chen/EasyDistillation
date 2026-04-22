@@ -18,26 +18,44 @@ from .quark_contract import *
 
 
 class HadronIrrep(Symbol):
-    def __new__(cls, hadron_name: str, momentum: List[int], irrep_name: str, parity: int, tag: Tag):
+    def __new__(
+        cls,
+        hadron_name: str,
+        momentum: List[int],
+        irrep_name: str,
+        parity: int,
+        tag: Tag,
+        dagger: bool = False,
+    ):
         if parity is None:
             obj = super().__new__(
-                cls, f"{hadron_name}({irrep_name}({tag.tag}),t={tag.time},{tuple(momentum)})", commutative=False
+                cls,
+                f"{hadron_name}({irrep_name}({tag.tag}),t={tag.time},{tuple(momentum)},{dagger})",
+                commutative=False,
             )
         elif parity == -1:
             obj = super().__new__(
                 cls,
-                f"{hadron_name}({irrep_name}u({tag.tag}),t={tag.time},{tuple(momentum)},{parity})",
+                f"{hadron_name}({irrep_name}u({tag.tag}),t={tag.time},{tuple(momentum)},{parity},{dagger})",
                 commutative=False,
             )
         else:
             obj = super().__new__(
                 cls,
-                f"{hadron_name}({irrep_name}g({tag.tag}),t={tag.time},{tuple(momentum)},{parity})",
+                f"{hadron_name}({irrep_name}g({tag.tag}),t={tag.time},{tuple(momentum)},{parity},{dagger})",
                 commutative=False,
             )
         return obj
 
-    def __init__(self, hadron_name: str, momentum: List[int], irrep_name: str, parity: int, tag: Tag):
+    def __init__(
+        self,
+        hadron_name: str,
+        momentum: List[int],
+        irrep_name: str,
+        parity: int,
+        tag: Tag,
+        dagger: bool = False,
+    ):
         """
         Initialize a HadronIrrep object.
 
@@ -53,6 +71,7 @@ class HadronIrrep(Symbol):
         self.irrep_name = irrep_name
         self.parity = parity
         self.tag = tag
+        self.dagger = dagger
 
         if irrep_name.startswith("T"):
             self.lenth = 3
@@ -64,7 +83,15 @@ class HadronIrrep(Symbol):
             self.lenth = 1
 
     def __getitem__(self, row_idx):
-        return HadronIrrepRow(self.hadron_name, self.momentum, self.irrep_name, row_idx, self.parity, self.tag)
+        return HadronIrrepRow(
+            self.hadron_name,
+            self.momentum,
+            self.irrep_name,
+            row_idx,
+            self.parity,
+            self.tag,
+            self.dagger,
+        )
 
     def __eq__(self, other):
         if not isinstance(other, HadronIrrep):
@@ -76,23 +103,73 @@ class HadronIrrep(Symbol):
                 and self.irrep_name == other.irrep_name
                 and self.parity == other.parity
                 and self.tag == other.tag
+                and self.dagger == other.dagger
             )
 
     def __hash__(self):
-        return hash((self.hadron_name, tuple(self.momentum), self.irrep_name, self.parity, self.tag))
+        return hash(
+            (
+                self.hadron_name,
+                tuple(self.momentum),
+                self.irrep_name,
+                self.parity,
+                self.tag,
+                self.dagger,
+            )
+        )
+
+    def copy(self):
+        return HadronIrrep(
+            self.hadron_name,
+            self.momentum,
+            self.irrep_name,
+            self.parity,
+            self.tag,
+            self.dagger,
+        )
 
 
 class HadronIrrepRow(Symbol):
-    def __new__(cls, hadron_name: str, momentum: List[int], irrep_name: str, row_idx: int, parity: int, tag: Tag):
+    def __new__(
+        cls,
+        hadron_name: str,
+        momentum: List[int],
+        irrep_name: str,
+        row_idx: int,
+        parity: int,
+        tag: Tag,
+        dagger: bool = False,
+    ):
         if parity is None:
-            obj = super().__new__(cls, f"{hadron_name}({irrep_name},{tuple(momentum)})[{row_idx}]", commutative=False)
+            obj = super().__new__(
+                cls,
+                rf"{hadron_name}({irrep_name},{tuple(momentum)}){'†' if dagger else ''}[{row_idx}]",
+                commutative=False,
+            )
         elif parity == -1:
-            obj = super().__new__(cls, f"{hadron_name}({irrep_name}u,{tuple(momentum)})[{row_idx}]", commutative=False)
+            obj = super().__new__(
+                cls,
+                rf"{hadron_name}({irrep_name}u,{tuple(momentum)}){'†' if dagger else ''}[{row_idx}]",
+                commutative=False,
+            )
         else:
-            obj = super().__new__(cls, f"{hadron_name}({irrep_name}g,{tuple(momentum)})[{row_idx}]", commutative=False)
+            obj = super().__new__(
+                cls,
+                rf"{hadron_name}({irrep_name}g,{tuple(momentum)}){'†' if dagger else ''}[{row_idx}]",
+                commutative=False,
+            )
         return obj
 
-    def __init__(self, hadron_name: str, momentum: List[int], irrep_name: str, row_idx: int, parity: int, tag: Tag):
+    def __init__(
+        self,
+        hadron_name: str,
+        momentum: List[int],
+        irrep_name: str,
+        row_idx: int,
+        parity: int,
+        tag: Tag,
+        dagger: bool = False,
+    ):
         """
         Initialize a HadronIrrepRow object.
 
@@ -110,6 +187,7 @@ class HadronIrrepRow(Symbol):
         self.irrep_name = irrep_name
         self.row_idx = row_idx
         self.parity = parity
+        self.dagger = dagger
         self.rotate = genLittleGroupIrrep([0, 0, 0], "T_1", -1)
         self.little_group_matrix = genLittleGroupIrrep(momentum, irrep_name, parity, p_ref_irrep=True)
 
@@ -124,10 +202,21 @@ class HadronIrrepRow(Symbol):
                 and self.row_idx == other.row_idx
                 and self.parity == other.parity
                 and self.tag == other.tag
+                and self.dagger == other.dagger
             )
 
     def __hash__(self):
-        return hash((self.hadron_name, tuple(self.momentum), self.irrep_name, self.row_idx, self.parity, self.tag))
+        return hash(
+            (
+                self.hadron_name,
+                tuple(self.momentum),
+                self.irrep_name,
+                self.row_idx,
+                self.parity,
+                self.tag,
+                self.dagger,
+            )
+        )
 
     def transform(self, group_element):
         momentum_final = list(self.rotate[group_element] @ Matrix(self.momentum))
@@ -135,7 +224,12 @@ class HadronIrrepRow(Symbol):
         result = S(0)
         for i in range(transform_matrix.shape[0]):
             result += transform_matrix[i, self.row_idx] * HadronIrrepRow(
-                self.hadron_name, momentum_final, self.irrep_name, i, self.parity, self.tag
+                self.hadron_name,
+                momentum_final,
+                self.irrep_name,
+                i,
+                self.parity,
+                self.tag,
             )
         return result
 
@@ -156,6 +250,28 @@ class HadronIrrepRow(Symbol):
 
     def __ge__(self, other):
         return self > other or self == other
+
+    def copy(self):
+        return HadronIrrepRow(
+            self.hadron_name,
+            self.momentum,
+            self.irrep_name,
+            self.row_idx,
+            self.parity,
+            self.tag,
+            self.dagger,
+        )
+
+    def conjugate(self):
+        return HadronIrrepRow(
+            self.hadron_name,
+            self.momentum,
+            self.irrep_name,
+            self.row_idx,
+            self.parity,
+            self.tag,
+            not self.dagger,
+        )
 
 
 from sympy import preorder_traversal
@@ -209,7 +325,11 @@ def multi_exprs_little_group_projection(expr_list, irrep_name, row_idx, parity=N
 
 
 def hadron_little_group_projection(
-    hadron_irreps: List[HadronIrrep], irrep_name, row_idx, parity=None, single_result=False
+    hadron_irreps: List[HadronIrrep],
+    irrep_name,
+    row_idx,
+    parity=None,
+    single_result=False,
 ):
     from itertools import product
     from .symmetry.gen_hardcoded_rep import littleGroup

@@ -33,7 +33,11 @@ def set_backend(backend: Literal["numpy", "cupy"]):
         raise ValueError(R'backend must be "numpy", "cupy" or "torch"')
 
 
-def check_QUDA(grid_size: List[int] = None, backend: Literal["cupy", "torch"] = "cupy", resource_path: str = None):
+def check_QUDA(
+    grid_size: List[int] = None,
+    backend: Literal["cupy", "torch"] = "cupy",
+    resource_path: str = None,
+):
     global PYQUDA
     if PYQUDA is None:
         try:
@@ -44,7 +48,9 @@ def check_QUDA(grid_size: List[int] = None, backend: Literal["cupy", "torch"] = 
             from packaging.version import Version
 
             if Version(pyquda.__version__) < Version("0.9.0"):
-                raise ImportError(f"PyQuda version {pyquda.__version__} < Required 0.9.X")
+                raise ImportError(
+                    f"PyQuda version {pyquda.__version__} < Required 0.9.X"
+                )
 
         except ImportError as e:
             print(f"ImportError: {e}")
@@ -56,3 +62,69 @@ def check_QUDA(grid_size: List[int] = None, backend: Literal["cupy", "torch"] = 
         PYQUDA = False
 
     return PYQUDA
+
+
+def log_gpu_memory(tag: str) -> None:
+    """
+    Log current GPU memory usage (CuPy) or CPU memory usage (NumPy).
+
+    This function attempts to query GPU memory information if using CuPy backend,
+    or CPU memory information if using NumPy backend.
+
+    Args:
+        tag: A string tag to identify the memory log entry (e.g., "load_data", "compute_overlap")
+
+    Example:
+        >>> from lattice.backend import log_gpu_memory
+        >>> log_gpu_memory("before_computation")
+        [GPU MEM][before_computation] used=2.345GB free=5.678GB total=8.023GB
+        # or for NumPy:
+        [CPU MEM][before_computation] rss=1.234GB vms=2.345GB percent=12.3%
+    """
+    try:
+        backend = get_backend()
+        backend_name = backend.__name__
+
+        if backend_name == "cupy":
+            # Query GPU memory for CuPy
+            free_bytes, total_bytes = backend.cuda.runtime.memGetInfo()
+            used_bytes = total_bytes - free_bytes
+            print(
+                f"[GPU MEM][{tag}] used={used_bytes / 1024 ** 3:.3f}GB "
+                f"free={free_bytes / 1024 ** 3:.3f}GB total={total_bytes / 1024 ** 3:.3f}GB"
+            )
+        elif backend_name == "numpy":
+            # Query CPU memory for NumPy
+            try:
+                import psutil
+                import os
+
+                process = psutil.Process(os.getpid())
+                mem_info = process.memory_info()
+                rss_bytes = mem_info.rss  # Resident Set Size (actual physical memory)
+                vms_bytes = mem_info.vms  # Virtual Memory Size
+                mem_percent = process.memory_percent()
+
+                print(
+                    f"[CPU MEM][{tag}] rss={rss_bytes / 1024 ** 3:.3f}GB "
+                    f"vms={vms_bytes / 1024 ** 3:.3f}GB percent={mem_percent:.1f}%"
+                )
+            except ImportError:
+                # psutil not available, try alternative method using sys.getsizeof
+                # This is less accurate but doesn't require external dependencies
+                import sys
+                import gc
+
+                total_size = 0
+                for obj in gc.get_objects():
+                    try:
+                        total_size += sys.getsizeof(obj)
+                    except:
+                        pass
+
+                print(
+                    f"[CPU MEM][{tag}] approximate_size={total_size / 1024 ** 3:.3f}GB "
+                    f"(note: install psutil for more accurate memory monitoring)"
+                )
+    except Exception as err:
+        print(f"[MEM][{tag}] query failed: {err}")

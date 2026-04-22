@@ -158,6 +158,31 @@ momDict_mom9 = {
     122: "0 0 3",
 }
 
+momDict_test={
+    0: "0 0 0",
+    1: "0 0 1",
+    2: "0 1 1",
+    3: "1 1 1",
+    4: "0 0 2",
+    5: "0 1 2",
+    6: "1 1 2",
+    7: "0 2 2",
+    8: "1 2 2",
+    9: "0 0 3",
+    10: "0 1 3",
+    11: "1 1 3",
+    12: "0 2 3",
+    13: "1 2 3",
+    14: "2 2 3",
+    15: "0 3 3",
+    16: "1 3 3",
+    17: "2 3 3",
+    18: "3 3 3",
+    19: "0 0 4",
+    20: "0 0 5",
+    21: "0 0 6",
+    22: "0 0 7",
+}
 
 def mom_dict_to_list(mom: int = 9):
     mom_dict = None
@@ -167,9 +192,12 @@ def mom_dict_to_list(mom: int = 9):
         mom_dict = momDict_mom3
     elif mom == 9:
         mom_dict = momDict_mom9
+    elif mom == 0:
+        mom_dict = momDict_test
     else:
         raise ValueError(f"Unknown mom max = {mom}")
     mom_list = []
     for val in mom_dict.values():
         mom_list.append(tuple([int(p) for p in val.split(" ")]))
     return mom_list
+

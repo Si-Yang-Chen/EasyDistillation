@@ -42,6 +42,8 @@ class NdarrayFileData(FileData):
             ) as mm:
                 file = numpy.ndarray.__new__(numpy.memmap, shape=tuple(shape), dtype=dtype, buffer=mm, offset=offset)
                 ret = backend.asarray(file[key].copy())
+
+
         self.time_in_sec += time() - s
         self.size_in_byte += ret.nbytes
         return ret
@@ -97,6 +99,8 @@ class NdarrayTimeslicesFileData(FileData):
             ) as mm:
                 file = numpy.ndarray.__new__(numpy.memmap, shape=tuple(shape), dtype=dtype, buffer=mm, offset=offset)
                 ret = backend.asarray(file[key].copy())
+
+
         self.time_in_sec += time() - s
         self.size_in_byte += ret.nbytes
         return ret

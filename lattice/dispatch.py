@@ -2,7 +2,7 @@ from io import FileIO
 import os
 import random
 from time import sleep
-from typing import Iterator
+from typing import Iterable, Iterator
 from mpi4py import MPI
 
 if os.name == "nt":
@@ -60,7 +60,8 @@ def rand(suffix: str = None) -> str:
 
 
 class Dispatch:
-    def __init__(self, filename: str, suffix: str = None) -> None:
+    def __init__(self, filename: str, suffix: str = None,cfg_list:Iterable=None) -> None:
+        # if cfg_list is not None:
         tmp = f"{filename}.{rand(suffix=suffix)}.tmp"
         self.tmp = tmp
         self.comm = MPI.COMM_WORLD

@@ -13,3 +13,7 @@ logs
 *.pdf
 venv
 .venv
+tools
+gen*
+test.py
+test.ipynb

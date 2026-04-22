@@ -10,9 +10,10 @@ if not check_QUDA():
     raise ImportError("Please install PyQuda")
 
 from lattice import PerambulatorGenerator, PerambulatorNpy
+
 from pyquda import enum_quda
 
-set_backend("cupy")
+set_backend("numpy")
 backend = get_backend()
 
 from lattice import GaugeFieldIldg, EigenvectorNpy, Nc, Nd
@@ -29,7 +30,7 @@ eigenvector = EigenvectorNpy(f"{test_dir}/", ".eigenvector.input.npy", [Lt, Ne, 
 perambulator = PerambulatorGenerator(
     latt_size=latt_size,
     gauge_field=gauge_field,
-    eigenvector=eigenvector,
+    eigenvector_src=eigenvector,
     mass=0.09253,
     tol=1e-9,
     maxiter=1000,
@@ -38,12 +39,12 @@ perambulator = PerambulatorGenerator(
     clover_coeff_t=0.8549165664,
     clover_coeff_r=2.32582045,
     t_boundary=-1,  # for this test lattice, use t_boundary=-1
-    multigrid=False, # set List[int] to enable multigrid. multigrid layer set.
+    multigrid=False,  # set List[int] to enable multigrid. multigrid layer set.
     contract_prec="<c16",
-    MRHS=False, # set True to enable quda mrhs support.
+    MRHS=False,  # set True to enable quda mrhs support.
 )  # arbitrary dirac parameters
 
-perambulator.dirac.invert_param.verbosity = enum_quda.QudaVerbosity.QUDA_SUMMARIZE
+# perambulator.dirac.invert_param.verbosity = enum_quda.QudaVerbosity.QUDA_SUMMARIZE
 
 out_prefix = "tests/"
 out_suffix = ".perambulator.npy"
@@ -54,7 +55,9 @@ def check(cfg, data):
     res = backend.linalg.norm(data_ref.get() - data)
     print(f"Test cfg {cfg}, res = {res}")
 
+
 import numpy
+
 peramb = numpy.zeros((Lt, Lt, Ns, Ns, Ne, Ne), "<c16")
 for cfg in ["weak_field"]:
     print(cfg)
