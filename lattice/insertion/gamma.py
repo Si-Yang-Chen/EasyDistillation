@@ -172,7 +172,7 @@ def scheme(name: str):
     return _naming_scheme[name]
 
 
-def irrep(name: str):
+def group(name: str):
     assert name in _naming_scheme
     return _naming_group[name]
 
@@ -204,7 +204,6 @@ class GammaName:
 
 
 from lattice.symmetry.gen_hardcoded_rep import *
-from lattice.symmetry.hardcoded_rep import group_element
 
 
 def genGammaTransformDict():
@@ -213,7 +212,7 @@ def genGammaTransformDict():
         # if key.startswith("invr") or key.startswith("r"):
         #     continue
         gamma_transform_dict[key] = [None] * 16
-    gamma_transform_dict["conj"] = [None] * 16
+    gamma_transform_dict['conj']=[None]*16
     for i in range(16):
         for name in _naming_scheme:
             if i in scheme(name):
@@ -234,10 +233,11 @@ def genGammaTransformDict():
                     gamma_transform_dict[key][i] = _naming_scheme[name][j]
                 elif result[j] == -1:
                     gamma_transform_dict[key][i] = _naming_scheme[name][j] + 16
-        if c == 1:
-            gamma_transform_dict["conj"][i] = i
+        if c == 1:  
+            gamma_transform_dict['conj'][i] = i
         elif c == -1:
-            gamma_transform_dict["conj"][i] = i + 16
+            gamma_transform_dict['conj'][i] = i + 16
+         
 
     return gamma_transform_dict
 
@@ -339,9 +339,10 @@ _gamma_transform_dict = {
     "invrc2d": [0, 4, 2, 22, 1, 21, 19, 23, 8, 12, 10, 30, 9, 29, 27, 31],
     "invrc2a": [0, 18, 17, 19, 4, 6, 5, 23, 8, 26, 25, 27, 12, 14, 13, 31],
     "invrc2b": [0, 2, 1, 19, 4, 22, 21, 23, 8, 10, 9, 27, 12, 30, 29, 31],
-    "conj": [0, 17, 18, 19, 20, 21, 22, 7, 24, 25, 26, 11, 28, 13, 14, 15],
+    'conj': [0, 17, 18, 19, 20, 21, 22, 7, 24, 25, 26, 11, 28, 13, 14, 15],
 }
-
 
 def gamma_transform(name: str, gamma_idx: int):
     return _gamma_transform_dict[name][gamma_idx]
+
+    

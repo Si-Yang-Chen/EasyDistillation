@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "EasyDistillation"
+version = "1.0.0"
+description = "Lattice QCD distillation framework: elementals, perambulators, quark diagrams, correlators"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "EasyDistillation developers"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "sympy",
+    "opt-einsum",
+    "lazy-object-proxy",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "cupy-cuda11x",
+]
+mpi = [
+    "mpi4py",
+]
+viz = [
+    "feynman",
+    "matplotlib",
+]
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+    "pytest-xdist",
+    "ruff",
+    "mypy",
+]
+
+[tool.setuptools.packages.find]
+include = ["lattice*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "gpu: tests requiring GPU (CuPy)",
+    "mpi: tests requiring MPI (mpi4py/PyQuda)",
+    "slow: tests that take >10 seconds",
+    "integration: tests requiring external data files",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "C4", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"lattice/symmetry/hardcoded_rep.py" = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+ignore_missing_imports = true
+exclude = ["lattice/symmetry/hardcoded_rep.py"]

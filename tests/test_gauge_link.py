@@ -2,9 +2,6 @@ import unittest
 import sys
 import os
 
-# Add project root directory to Python path
-test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(test_dir, ".."))
 
 from lattice.insertion.gauge_link import GaugeLink, gauge_transform_dict, gen_insertion_dict
 
@@ -665,19 +662,6 @@ class TestGaugeLink(unittest.TestCase):
 
         except Exception as e:
             self.fail(f"一致性测试失败: {e}")
-
-    def test_gen_insertion_dict_max_multiplets_per_irrep(self):
-        """Each irrep list length must not exceed max_multiplets_per_irrep when set."""
-        cap = 3
-        result = gen_insertion_dict(
-            max_lenth=1, insertion_form=True, max_multiplets_per_irrep=cap
-        )
-        for key, value in result.items():
-            self.assertLessEqual(
-                len(value),
-                cap,
-                f"irrep {key} should have at most {cap} multiplets",
-            )
 
 
 if __name__ == "__main__":

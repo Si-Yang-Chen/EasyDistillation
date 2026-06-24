@@ -51,4 +51,4 @@ from .quark_diagram import (
 )
 from .constant import Nc, Ns, Nd
 
-# from pip._vendor.rich.progress import track as progressbar
+

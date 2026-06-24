@@ -1,13 +1,12 @@
 import os
 import sys
+import pytest
 
-test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(test_dir, ".."))
+pytestmark = pytest.mark.mpi
+
+pytest.importorskip("pyquda")
 
 from lattice import set_backend, get_backend, check_QUDA
-
-if not check_QUDA():
-    raise ImportError("Please install PyQuda")
 
 from lattice import PerambulatorGenerator, PerambulatorNpy
 

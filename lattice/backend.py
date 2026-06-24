@@ -1,4 +1,7 @@
 from typing import Literal, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 _BACKEND = None
 PYQUDA = None
@@ -44,7 +47,7 @@ def check_QUDA(
             import pyquda
 
             pyquda.init(grid_size, backend=backend, resource_path=resource_path)
-            print("PyQUDA installed in: ", pyquda.__file__)
+            logger.info("PyQUDA installed in: %s", pyquda.__file__)
             from packaging.version import Version
 
             if Version(pyquda.__version__) < Version("0.9.0"):
@@ -53,9 +56,9 @@ def check_QUDA(
                 )
 
         except ImportError as e:
-            print(f"ImportError: {e}")
+            logger.warning("ImportError: %s", e)
         except RuntimeError as e:
-            print(f"RuntimeError: {e}")
+            logger.warning("RuntimeError: %s", e)
         else:
             PYQUDA = True
     if PYQUDA is None:
@@ -89,9 +92,9 @@ def log_gpu_memory(tag: str) -> None:
             # Query GPU memory for CuPy
             free_bytes, total_bytes = backend.cuda.runtime.memGetInfo()
             used_bytes = total_bytes - free_bytes
-            print(
-                f"[GPU MEM][{tag}] used={used_bytes / 1024 ** 3:.3f}GB "
-                f"free={free_bytes / 1024 ** 3:.3f}GB total={total_bytes / 1024 ** 3:.3f}GB"
+            logger.info(
+                "[GPU MEM][%s] used=%.3fGB free=%.3fGB total=%.3fGB",
+                tag, used_bytes / 1024 ** 3, free_bytes / 1024 ** 3, total_bytes / 1024 ** 3,
             )
         elif backend_name == "numpy":
             # Query CPU memory for NumPy
@@ -105,9 +108,9 @@ def log_gpu_memory(tag: str) -> None:
                 vms_bytes = mem_info.vms  # Virtual Memory Size
                 mem_percent = process.memory_percent()
 
-                print(
-                    f"[CPU MEM][{tag}] rss={rss_bytes / 1024 ** 3:.3f}GB "
-                    f"vms={vms_bytes / 1024 ** 3:.3f}GB percent={mem_percent:.1f}%"
+                logger.info(
+                    "[CPU MEM][%s] rss=%.3fGB vms=%.3fGB percent=%.1f%%",
+                    tag, rss_bytes / 1024 ** 3, vms_bytes / 1024 ** 3, mem_percent,
                 )
             except ImportError:
                 # psutil not available, try alternative method using sys.getsizeof
@@ -119,12 +122,12 @@ def log_gpu_memory(tag: str) -> None:
                 for obj in gc.get_objects():
                     try:
                         total_size += sys.getsizeof(obj)
-                    except:
+                    except Exception:
                         pass
 
-                print(
-                    f"[CPU MEM][{tag}] approximate_size={total_size / 1024 ** 3:.3f}GB "
-                    f"(note: install psutil for more accurate memory monitoring)"
+                logger.info(
+                    "[CPU MEM][%s] approximate_size=%.3fGB (note: install psutil for more accurate memory monitoring)",
+                    tag, total_size / 1024 ** 3,
                 )
     except Exception as err:
-        print(f"[MEM][{tag}] query failed: {err}")
+        logger.warning("[MEM][%s] query failed: %s", tag, err)

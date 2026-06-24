@@ -303,12 +303,8 @@ class GaugeLink(Symbol):
         return GaugeLink(new_gauge_list)
 
 
-def gen_insertion_dict(max_lenth, insertion_form=True, max_multiplets_per_irrep=None):
-    """生成gauge_irrep
-
-    max_multiplets_per_irrep: if set to an int, each irrep key keeps at most that many
-    multiplets (order follows the generation loop). None means no limit.
-    """
+def gen_insertion_dict(max_lenth, insertion_form=True):
+    """生成gauge_irrep"""
     from lattice.symmetry.gen_hardcoded_rep import momentunSymplify, littleGroup
 
     max_idx = list(GaugeLink.nmax_generator(max_lenth))[-1]
@@ -411,8 +407,6 @@ def gen_insertion_dict(max_lenth, insertion_form=True, max_multiplets_per_irrep=
                 final_result_dict[key] = find_linear_independent_exprs(final_result_dict[key])
             for key in final_result_dict.keys():
                 for i in range(len(final_result_dict[key])):
-                    if max_multiplets_per_irrep is not None and len(irrep_dict[key]) >= max_multiplets_per_irrep:
-                        break
                     final_result = final_result_dict[key][i]
                     irrep_row_connection = irrep_row_connection_dict["0,0,0"][key[:-2]]
                     result_irrep = []

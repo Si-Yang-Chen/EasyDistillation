@@ -165,7 +165,7 @@ def are_collinear_and_normalize(expressions: List[Expr]) -> Optional[Expr]:
         else:
             coeff = base  # Handle constant expressions
         normalized = base / coeff
-    except:
+    except (ValueError, ZeroDivisionError):
         # Non-polynomial expression, try to extract product coefficient
         coeff, terms = base.as_coeff_mul()
         if len(terms) == 1:

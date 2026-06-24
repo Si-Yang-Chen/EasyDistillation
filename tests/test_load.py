@@ -2,7 +2,6 @@ import os
 import sys
 
 test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(test_dir, ".."))
 from lattice import set_backend, get_backend, Nd, Nc
 from lattice import GaugeFieldIldg
 

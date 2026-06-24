@@ -1,16 +1,14 @@
 import os
 import sys
+import pytest
 
-test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(test_dir, ".."))
+pytestmark = pytest.mark.mpi
 
+pytest.importorskip("pyquda")
 
 from lattice import set_backend, get_backend, check_QUDA
 
 grid_size = [1, 1, 2, 2]
-# check and init PyQuda & MPI
-if not check_QUDA(grid_size=grid_size, backend="cupy", resource_path=None):
-    raise ImportError("Please install PyQuda")
 latt_size = [4, 4, 4, 8]
 Lx, Ly, Lz, Lt = latt_size
 Gx, Gy, Gz, Gt = grid_size

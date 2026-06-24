@@ -1,9 +1,9 @@
 from copy import copy, deepcopy
-from collections import defaultdict
 import gc
 from itertools import product
-import time
+import logging
 import os
+from time import perf_counter
 from typing import Callable, Dict, List, Union, Any, Tuple, Optional
 
 import numpy as np
@@ -32,6 +32,8 @@ from lattice.spatial_structure import HadronIrrepRow
 from .base_types import Tag
 
 from .backend import get_backend, log_gpu_memory
+
+logger = logging.getLogger(__name__)
 
 # Fixed label sets for Einstein summation (opt_einsum)
 _SUB_VECTOR = "NOPQRSTUVWXYZ"  # Eigenvector/color indices
@@ -370,12 +372,12 @@ class QuarkDiagram:
         See localized_blending.md "程序设计：任意点采样的组合权重" for mathematical details.
         """
         if self.debug:
-            print(f"\n{'='*80}")
-            print(f"QuarkDiagram.expand_with_current() - Expanding diagram")
-            print(f"{'='*80}")
-            print(f"Vertex list: {self.vertex_list}")
-            print(f"Adjacency matrix:")
-            print(self.adjacency_matrix)
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"QuarkDiagram.expand_with_current() - Expanding diagram")
+            logger.debug(f"{'='*80}")
+            logger.debug(f"Vertex list: {self.vertex_list}")
+            logger.debug(f"Adjacency matrix:")
+            logger.debug(self.adjacency_matrix)
 
         from copy import deepcopy
 
@@ -400,12 +402,12 @@ class QuarkDiagram:
                                 edges_to_current.append([_path, i, j])
 
         if self.debug:
-            print(
+            logger.debug(
                 f"\nFound {len(edges_to_current)} edges connected to current vertices:"
             )
             for edge in edges_to_current:
-                print(f"  propagator[{edge[0]}]: vertex {edge[1]} -> vertex {edge[2]}")
-            print(
+                logger.debug(f"  propagator[{edge[0]}]: vertex {edge[1]} -> vertex {edge[2]}")
+            logger.debug(
                 f"Current vertices (non-zero in vertex_list): {[i for i, v in enumerate(self.vertex_list) if v != 0]}"
             )
 
@@ -435,7 +437,7 @@ class QuarkDiagram:
         all_combinations = list(iter_product(*state_combinations))
 
         if self.debug:
-            print(f"\nGenerating {len(all_combinations)} state combinations:")
+            logger.debug(f"\nGenerating {len(all_combinations)} state combinations:")
             for i, vertex_state in enumerate(all_combinations):
                 state_desc = ", ".join(
                     [
@@ -443,27 +445,27 @@ class QuarkDiagram:
                         for j in range(len(self.vertex_list))
                     ]
                 )
-                print(f"  Combination {i}: {state_desc}")
+                logger.debug(f"  Combination {i}: {state_desc}")
 
         # After all state combinations are generated, expand each diagram into scenes based on point coincidences
         if self.debug:
-            print(f"\n{'='*80}")
-            print(f"Expanding diagrams into point coincidence scenes...")
-            print(f"{'='*80}")
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"Expanding diagrams into point coincidence scenes...")
+            logger.debug(f"{'='*80}")
 
         # For each combination, create a new StateExpandedDiagram and expand it into scenes
         for combo_idx, vertex_state in enumerate(all_combinations):
 
             if self.debug:
-                print(f"\n{'='*60}")
-                print(f"Processing combination {combo_idx}:")
+                logger.debug(f"\n{'='*60}")
+                logger.debug(f"Processing combination {combo_idx}:")
                 state_desc = ", ".join(
                     [
                         f"vertex[{j}]=(left={vertex_state[j]['left']}, right={vertex_state[j]['right']})"
                         for j in range(len(self.vertex_list))
                     ]
                 )
-                print(f"  State: {state_desc}")
+                logger.debug(f"  State: {state_desc}")
 
             # Create a new StateExpandedDiagram for this combination
             new_diagram = StateExpandedDiagram(
@@ -478,14 +480,14 @@ class QuarkDiagram:
             # Expand this diagram into scenes (stored in new_diagram.scene_diagrams)
             new_diagram.expand_scenes()
             if self.debug:
-                print(f"  Expanded to {len(new_diagram.scene_diagrams)} scenes")
+                logger.debug(f"  Expanded to {len(new_diagram.scene_diagrams)} scenes")
 
             # Store the StateExpandedDiagram (which contains scene_diagrams internally)
             self.expanded_diagrams.append(new_diagram)
             self.expanded_diagrams_weights.append(1.0)
 
         if self.debug:
-            print(
+            logger.debug(
                 f"\nTotal StateExpandedDiagram instances: {len(self.expanded_diagrams)}"
             )
 
@@ -515,8 +517,18 @@ class QuarkDiagram:
                         if isinstance(path, int):
                             propagators.append([path, i, j])
                         elif isinstance(path, list):
-                            for _path in path:
-                                propagators.append([_path, i, j])
+                            # Handle arbitrarily nested lists (e.g., 3x3 matrices for baryon contractions)
+                            def extract_propagators(nested_path, src, snk):
+                                """Recursively extract propagator indices from nested lists."""
+                                results = []
+                                for item in nested_path:
+                                    if isinstance(item, int):
+                                        if item != 0:  # Skip zero entries
+                                            results.append([item, src, snk])
+                                    elif isinstance(item, list):
+                                        results.extend(extract_propagators(item, src, snk))
+                                return results
+                            propagators.extend(extract_propagators(path, i, j))
                         else:
                             raise ValueError(
                                 f"Invalid value {path} in the adjacency matrix"
@@ -684,7 +696,7 @@ class StateExpandedDiagram(QuarkDiagram):
                 continue
 
             if self.debug:
-                print(
+                logger.debug(
                     f"\n  Contraction group {contraction_group}: Starting from vertex {idx}"
                 )
 
@@ -712,23 +724,23 @@ class StateExpandedDiagram(QuarkDiagram):
 
             if propagators == []:
                 if self.debug:
-                    print(f"    No propagators found, skipping")
+                    logger.debug(f"    No propagators found, skipping")
                 continue
 
             if self.debug:
-                print(f"    Total propagators in this group: {len(propagators)}")
+                logger.debug(f"    Total propagators in this group: {len(propagators)}")
 
             # Build subscripts based on propagator types
             self._build_subscripts_with_types(propagators, vertex_state)
             contraction_group += 1
 
         if self.debug:
-            print(f"\n{'='*60}")
-            print(f"Combination analysis completed")
-            print(
+            logger.debug(f"\n{'='*60}")
+            logger.debug(f"Combination analysis completed")
+            logger.debug(
                 f"Total contraction groups for this combination: {len(self.operands)}"
             )
-            print(f"{'='*60}\n")
+            logger.debug(f"{'='*60}\n")
 
     def _build_subscripts_with_types(
         self,
@@ -819,7 +831,7 @@ class StateExpandedDiagram(QuarkDiagram):
             propagator_operands.append(propagator)
 
             if self.debug:
-                print(
+                logger.debug(
                     f"    Propagator {prop_idx}: [{prop_id}, {src}, {snk}] type={prop_type}"
                 )
 
@@ -1004,7 +1016,7 @@ class StateExpandedDiagram(QuarkDiagram):
             propagator_subscripts.append(prop_subscript)
 
             if self.debug:
-                print(f"      Initial subscript: {prop_subscript}")
+                logger.debug(f"      Initial subscript: {prop_subscript}")
 
         for vertex_idx, vertex_info in enumerate(vertex_infos):
             if vertex_types[vertex_idx] == "V2V":
@@ -1045,13 +1057,13 @@ class StateExpandedDiagram(QuarkDiagram):
         )
 
         if self.debug:
-            print(f"\n    Final subscript: {final_subscript}")
-            print(f"    Propagator operands: {propagator_operands}")
-            print(f"    Vertex operands: {vertex_operands}")
-            print(f"    Propagator types: {propagator_types}")
-            print(f"    Vertex types: {vertex_types}")
+            logger.debug(f"\n    Final subscript: {final_subscript}")
+            logger.debug(f"    Propagator operands: {propagator_operands}")
+            logger.debug(f"    Vertex operands: {vertex_operands}")
+            logger.debug(f"    Propagator types: {propagator_types}")
+            logger.debug(f"    Vertex types: {vertex_types}")
             for v_idx, v_id in enumerate(vertex_operands):
-                print(f"      Vertex {v_id}: type={vertex_types[v_idx]}")
+                logger.debug(f"      Vertex {v_id}: type={vertex_types[v_idx]}")
 
         self.operands.append([propagator_operands, vertex_operands])
         self.subscripts.append(final_subscript)
@@ -1105,11 +1117,11 @@ class StateExpandedDiagram(QuarkDiagram):
             self.scene_weights.append(1.0)
             self.scene_constraints.append([])
             if self.debug:
-                print(f"No sampling groups, keeping as single scene")
+                logger.debug(f"No sampling groups, keeping as single scene")
             return
 
         if self.debug:
-            print(f"Generating scenes for {len(self.sampling_groups)} sampling groups")
+            logger.debug(f"Generating scenes for {len(self.sampling_groups)} sampling groups")
 
         # Enumerate scenes for each sampling group
         # For multiple independent groups, we need Cartesian product of their scenes
@@ -1122,7 +1134,7 @@ class StateExpandedDiagram(QuarkDiagram):
             ]
 
             if self.debug:
-                print(f"  Group {group_id}: {r} positions, {len(scenes)} scenes")
+                logger.debug(f"  Group {group_id}: {r} positions, {len(scenes)} scenes")
 
         # Generate Cartesian product of scenes across all groups
         group_ids = list(group_scenes.keys())
@@ -1143,10 +1155,9 @@ class StateExpandedDiagram(QuarkDiagram):
             constraints = self._build_scene_constraints(all_partitions)
 
             if self.debug:
-                print(
+                logger.debug(
                     f"    Scene: weight={total_weight:.6f}, constraints={constraints}"
                 )
-                print()
 
             # Create a new SceneExpandedDiagram for this scene combination
             scene_diagram = SceneExpandedDiagram(
@@ -1157,7 +1168,7 @@ class StateExpandedDiagram(QuarkDiagram):
                 operands_data=self.operands_data,
                 propagator_types=self.propagator_types,
                 vertex_types=self.vertex_types,
-                vertex_infos=getattr(self, "vertex_point_info", None),
+                vertex_infos=self.vertex_infos,
                 scene_constraints=constraints,
                 L=M,  # M here represents total lattice points (L^3)
                 usedNp=N,
@@ -1170,7 +1181,7 @@ class StateExpandedDiagram(QuarkDiagram):
             self.scene_constraints.append(constraints)
 
         if self.debug:
-            print(f"Generated {len(self.scene_diagrams)} scene diagrams")
+            logger.debug(f"Generated {len(self.scene_diagrams)} scene diagrams")
 
     def _collect_sampling_groups(self, vertex_state: tuple) -> None:
         """
@@ -1203,9 +1214,9 @@ class StateExpandedDiagram(QuarkDiagram):
                 self.sampling_groups[group_id].append((vertex_idx, "right"))
 
         if self.debug:
-            print(f"\n  Collected sampling groups:")
+            logger.debug(f"\n  Collected sampling groups:")
             for group_id, positions in self.sampling_groups.items():
-                print(
+                logger.debug(
                     f"    Group {group_id}: {positions} ({len(positions)} point positions)"
                 )
 
@@ -1373,24 +1384,31 @@ class SceneExpandedDiagram(QuarkDiagram):
                 number_to_positions[right_id].append((vertex_idx, "right"))
 
         # Output the mapping information
-        print("Constraint number to positions mapping:")
+        logger.debug("Constraint number to positions mapping:")
         for number, positions in number_to_positions.items():
-            print(f"Number {number}: {positions}")
+            logger.debug(f"Number {number}: {positions}")
 
-        print("\nCorresponding vertex_infos:")
+        logger.debug("\nCorresponding vertex_infos:")
         for number, positions in number_to_positions.items():
-            print(f"Number {number}:")
+            logger.debug(f"Number {number}:")
             for vertex_idx, side in positions:
-                if vertex_idx < len(self.vertex_infos):
-                    vertex_info = self.vertex_infos[vertex_idx]
-                    print(
-                        f"  Vertex {vertex_idx}, side '{side}': {vertex_info.get(side, 'N/A')}"
+                found = False
+                # vertex_infos is a List[List[Dict]]: one list per contraction group
+                for group_idx, group_vertex_infos in enumerate(self.vertex_infos):
+                    if isinstance(group_vertex_infos, list) and vertex_idx < len(group_vertex_infos):
+                        vertex_info = group_vertex_infos[vertex_idx]
+                        logger.debug(
+                            f"  Group {group_idx}, Vertex {vertex_idx}, side '{side}': {vertex_info.get(side, 'N/A')}"
+                        )
+                        found = True
+                    elif not isinstance(group_vertex_infos, list):
+                        logger.debug(
+                            f"  Group {group_idx}, Vertex {vertex_idx}, side '{side}': unexpected structure"
+                        )
+                if not found:
+                    logger.debug(
+                        f"  Vertex {vertex_idx}, side '{side}': not found in any contraction group"
                     )
-                else:
-                    print(
-                        f"  Vertex {vertex_idx}, side '{side}': vertex_idx out of range"
-                    )
-            print()
 
 
 class Particle:
@@ -1398,36 +1416,12 @@ class Particle:
 
 
 class Meson(Particle):
-    def __init__(
-        self,
-        elemental,
-        operator,
-        source,
-        usedNe: int = None,
-        usedNe_l: int = None,
-        usedNe_r: int = None,
-    ) -> None:
+    def __init__(self, elemental, operator, source) -> None:
         self.elemental = elemental
         self.elemental_data = None
         self.key = None
         self.operator = operator
         self.dagger = source
-        # Store init values for min-merge with load values
-        self._init_usedNe = usedNe
-        self._init_usedNe_l = usedNe_l
-        self._init_usedNe_r = usedNe_r
-        self._load_usedNe = None
-        self._load_usedNe_l = None
-        self._load_usedNe_r = None
-        # Effective values (init and load merged by min)
-        self.usedNe = usedNe
-        # usedNe_l/r: explicit values take priority over usedNe fallback
-        if usedNe_l is None:
-            usedNe_l = usedNe
-        if usedNe_r is None:
-            usedNe_r = usedNe
-        self.usedNe_l = usedNe_l
-        self.usedNe_r = usedNe_r
         self.outward = 1
         self.inward = 1
         self.smeared = True
@@ -1435,24 +1429,6 @@ class Meson(Particle):
         # cache is shared among all instances of Meson.
         backend = get_backend()
         self.cache: Dict[int, backend.ndarray] = {}
-
-    @staticmethod
-    def _min_merge(init_val, load_val, fallback=None):
-        vals = [v for v in (init_val, load_val) if v is not None]
-        if vals:
-            return min(vals)
-        return fallback
-
-    def _effective_usedNe(self):
-        return self._min_merge(self._init_usedNe, self._load_usedNe)
-
-    def _effective_usedNe_l(self):
-        base = self._effective_usedNe()
-        return self._min_merge(self._init_usedNe_l, self._load_usedNe_l, fallback=base)
-
-    def _effective_usedNe_r(self):
-        base = self._effective_usedNe()
-        return self._min_merge(self._init_usedNe_r, self._load_usedNe_r, fallback=base)
 
     def _release_resources(self):
         self.elemental_data = None
@@ -1488,18 +1464,8 @@ class Meson(Particle):
         str += Rf"\n dagger = {self.dagger} \n"
         return str
 
-    def load(self, key, usedNe: int = None, usedNe_l: int = None, usedNe_r: int = None):
-        # Store load values
-        if usedNe is not None:
-            self._load_usedNe = usedNe
-        if usedNe_l is not None:
-            self._load_usedNe_l = usedNe_l
-        if usedNe_r is not None:
-            self._load_usedNe_r = usedNe_r
-        # Compute effective values (min of init and load)
-        self.usedNe = self._effective_usedNe()
-        self.usedNe_l = self._effective_usedNe_l()
-        self.usedNe_r = self._effective_usedNe_r()
+    def load(self, key, usedNe: int = None):
+        self.usedNe = usedNe
         if self.key != key:
             self._release_resources()
             self.key = key
@@ -1526,27 +1492,9 @@ class Meson(Particle):
                 elemental_coeff = complex(elemental_coeff)
                 deriv_mom_tuple = (derivative_idx, momentum_idx)
                 if deriv_mom_tuple not in cache:
-                    if profile is not None:
-                        profile = backend.asarray(profile)
-                        cache[deriv_mom_tuple] = contract(
-                            "tab,ab->tab",
-                            self.elemental_data[
-                                derivative_idx,
-                                momentum_idx,
-                                :,
-                                :,
-                                :,
-                            ],
-                            profile,
-                        )
-                    else:
-                        cache[deriv_mom_tuple] = self.elemental_data[
-                            derivative_idx,
-                            momentum_idx,
-                            :,
-                            :,
-                            :,
-                        ]
+                    cache[deriv_mom_tuple] = self.elemental_data[
+                        derivative_idx, momentum_idx, :, : self.usedNe, : self.usedNe
+                    ]
                 if j == 0:
                     ret_elemental.append(elemental_coeff * cache[deriv_mom_tuple])
                 else:
@@ -1559,14 +1507,12 @@ class Meson(Particle):
                     backend.asarray(ret_gamma).conj(),
                     gamma(8),
                 ),
-                contract("xtba->xtab", backend.asarray(ret_elemental).conj())[
-                    :, :, : self.usedNe_l, : self.usedNe_r
-                ],
+                contract("xtba->xtab", backend.asarray(ret_elemental).conj()),
             )
         else:
             self.cache = (
                 backend.asarray(ret_gamma),
-                backend.asarray(ret_elemental)[:, :, : self.usedNe_l, : self.usedNe_r],
+                backend.asarray(ret_elemental),
             )
 
     def get(self, t):
@@ -1600,15 +1546,12 @@ class Current(Meson):
         elemental,
         operator,
         source,
-        usedNe: int = None,
-        usedNp: int = None,
         v2p_data: "CurrentElementalV2P" = None,
         p2v_data: "CurrentElementalP2V" = None,
         p2p_data: "CurrentElementalP2P" = None,
         debug: bool = False,
     ) -> None:
-        super().__init__(elemental, operator, source, usedNe=usedNe)
-        self.usedNp = usedNp
+        super().__init__(elemental, operator, source)
         self.smeared = False
         self.v2p_data = v2p_data
         self.p2v_data = p2v_data
@@ -1713,7 +1656,7 @@ class Current(Meson):
             self._disp_reversal_map[disp_idx] = reverse_idx
 
             if self.debug:
-                print(
+                logger.debug(
                     f"Displacement reversal: {disp_idx} (disp={disp}) -> {reverse_idx} (disp={reverse_disp})"
                 )
 
@@ -1734,14 +1677,14 @@ class Current(Meson):
         self._build_displacement_reversal_map()
 
         if self.debug:
-            print(f"\n{'='*80}")
-            print(f"DEBUG: _make_cache() called (from precomputed data)")
-            print(f"DEBUG: usedNe={self.usedNe}, usedNp={self.usedNp}")
-            print(f"{'='*80}\n")
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"DEBUG: _make_cache() called (from precomputed data)")
+            logger.debug(f"DEBUG: usedNe={self.usedNe}, usedNp={self.usedNp}")
+            logger.debug(f"{'='*80}\n")
 
         # Load p2v data for all time slices (needed for v2p symmetry)
         if self.debug:
-            print("DEBUG: Loading p2v data for v2p symmetry calculation...")
+            logger.debug("DEBUG: Loading p2v data for v2p symmetry calculation...")
         p2v_full = self.p2v_data.load(self.key)[:]  # [Lt, num_disp, Np, Nc, Ne]
 
         ret_gamma = []
@@ -1754,8 +1697,8 @@ class Current(Meson):
             elemental_part = parts[i * 2 + 1]
 
             if self.debug:
-                print(f"\nDEBUG: Processing operatorpart {i}, gamma={parts[i * 2]}")
-                print(f"DEBUG: elemental_part has {len(elemental_part)} terms")
+                logger.debug(f"\nDEBUG: Processing operatorpart {i}, gamma={parts[i * 2]}")
+                logger.debug(f"DEBUG: elemental_part has {len(elemental_part)} terms")
 
             for j in range(len(elemental_part)):
                 elemental_coeff, gaugelink_idx, momentum_idx = elemental_part[j]
@@ -1763,7 +1706,7 @@ class Current(Meson):
                 deriv_mom_tuple_v2v = ("v2v", gaugelink_idx, momentum_idx)
 
                 if self.debug:
-                    print(
+                    logger.debug(
                         f"\n  DEBUG: Term {j}: coeff={elemental_coeff}, gaugelink_idx={gaugelink_idx}, momentum_idx={momentum_idx}"
                     )
 
@@ -1773,7 +1716,7 @@ class Current(Meson):
                         gaugelink_idx, momentum_idx, :, : self.usedNe, : self.usedNe
                     ]
                     if self.debug:
-                        print(
+                        logger.debug(
                             f"  DEBUG: cache_v2v created, shape={cache_v2v[deriv_mom_tuple_v2v].shape}"
                         )
 
@@ -1824,22 +1767,22 @@ class Current(Meson):
                     )
 
         if self.debug:
-            print(f"\n{'='*80}")
-            print(f"DEBUG: _make_cache() completed")
-            print(f"DEBUG: Total cache entries created:")
-            print(f"  - cache_v2v: {len(cache_v2v)} entries")
-            print(f"DEBUG: ret_gamma length: {len(ret_gamma)}")
-            print(f"DEBUG: ret_elemental_v2v length: {len(ret_elemental_v2v)}")
-            print(
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"DEBUG: _make_cache() completed")
+            logger.debug(f"DEBUG: Total cache entries created:")
+            logger.debug(f"  - cache_v2v: {len(cache_v2v)} entries")
+            logger.debug(f"DEBUG: ret_gamma length: {len(ret_gamma)}")
+            logger.debug(f"DEBUG: ret_elemental_v2v length: {len(ret_elemental_v2v)}")
+            logger.debug(
                 f"DEBUG: ret_elemental_v2p length: {len(ret_elemental_v2p)} (pre-computed from p2v symmetry)"
             )
-            print(
+            logger.debug(
                 f"DEBUG: ret_elemental_p2v length: {len(ret_elemental_p2v)} (pre-loaded data)"
             )
-            print(
+            logger.debug(
                 f"DEBUG: ret_elemental_p2p length: {len(ret_elemental_p2p)} (lazy load instructions)"
             )
-            print(f"{'='*80}\n")
+            logger.debug(f"{'='*80}\n")
 
         # Store as tuples for pre-loaded data
         # ret_elemental_v2p contains pre-computed data from p2v symmetry
@@ -2002,7 +1945,7 @@ class Current(Meson):
 
 
 class Propagator:
-    def __init__(self, perambulator, Lt, usedNe: int = None) -> None:
+    def __init__(self, perambulator, Lt) -> None:
         self.perambulator = perambulator
         self.perambulator_data = None
         self.key = None
@@ -2010,9 +1953,6 @@ class Propagator:
         self.cache = None
         self.cache_dagger = None
         self.cached_time = None
-        self._init_usedNe = usedNe
-        self._load_usedNe = None
-        self.usedNe = usedNe
 
     def _release_resources(self):
         self.perambulator_data = None
@@ -2043,17 +1983,11 @@ class Propagator:
         except Exception:
             pass
 
-    def _effective_usedNe(self):
-        vals = [v for v in (self._init_usedNe, self._load_usedNe) if v is not None]
-        return min(vals) if vals else None
-
     def load(self, key, usedNe: int = None):
         if self.key != key:
             # self._release_resources()
             self.key = key
-            if usedNe is not None:
-                self._load_usedNe = usedNe
-            self.usedNe = self._effective_usedNe()
+            self.usedNe = usedNe
             self.perambulator_data = self.perambulator.load(key)
 
     def get(self, t_source, t_sink):
@@ -2064,7 +1998,6 @@ class Propagator:
                 self.cache = self.perambulator_data[
                     t_source, :, :, :, : self.usedNe, : self.usedNe
                 ]
-
                 self.cache_dagger = contract(
                     "ik,tlkba,lj->tijab", gamma(15), self.cache.conj(), gamma(15)
                 )
@@ -2098,26 +2031,17 @@ class Propagator:
 
 
 class PropagatorLocal:
-    def __init__(self, perambulator, Lt, usedNe: int = None) -> None:
+    def __init__(self, perambulator, Lt) -> None:
         self.perambulator = perambulator
         self.key = None
         self.Lt = Lt
         self.cache = None
-        self._init_usedNe = usedNe
-        self._load_usedNe = None
-        self.usedNe = usedNe
-
-    def _effective_usedNe(self):
-        vals = [v for v in (self._init_usedNe, self._load_usedNe) if v is not None]
-        return min(vals) if vals else None
 
     def load(self, key, usedNe: int = None):
         if self.key != key:
             self.key = key
             self.perambulator_data = self.perambulator.load(key)
-            if usedNe is not None:
-                self._load_usedNe = usedNe
-            self.usedNe = self._effective_usedNe()
+            self.usedNe = usedNe
             self._make_cache()
 
     def _make_cache(self):
@@ -2224,27 +2148,27 @@ class PropagatorWithCurrent(Propagator):
         """Load data from all available propagators. Slicing is deferred to get-time (like parent)."""
         if self.debug:
             log_gpu_memory(f"PropagatorWithCurrent.load(before, key={key})")
-            print(f"\n{'='*80}")
-            print(f"PropagatorWithCurrent.load() called")
-            print(f"{'='*80}")
-            print(f"  key: {key}")
-            print(f"  usedNe: {usedNe}")
-            print(f"  usedNp: {usedNp}")
-            print(f"  self.key (current): {self.key}")
-            print(f"  Available propagators:")
-            print(f"    VSV (perambulator): {self.perambulator is not None}")
-            print(f"    VSP (vsp_propagator): {self.vsp_propagator is not None}")
-            print(f"    PSV (psv_propagator): {self.psv_propagator is not None}")
-            print(f"    PSP (psp_propagator): {self.psp_propagator is not None}")
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"PropagatorWithCurrent.load() called")
+            logger.debug(f"{'='*80}")
+            logger.debug(f"  key: {key}")
+            logger.debug(f"  usedNe: {usedNe}")
+            logger.debug(f"  usedNp: {usedNp}")
+            logger.debug(f"  self.key (current): {self.key}")
+            logger.debug(f"  Available propagators:")
+            logger.debug(f"    VSV (perambulator): {self.perambulator is not None}")
+            logger.debug(f"    VSP (vsp_propagator): {self.vsp_propagator is not None}")
+            logger.debug(f"    PSV (psv_propagator): {self.psv_propagator is not None}")
+            logger.debug(f"    PSP (psp_propagator): {self.psp_propagator is not None}")
 
         if self.key != key:
             if self.debug:
-                print(f"\n  Key changed, loading new data...")
+                logger.debug(f"\n  Key changed, loading new data...")
 
             # Load VSV via parent. Parent defers slicing to get().
             if self.perambulator is not None:
                 if self.debug:
-                    print(f"  Loading VSV via parent...")
+                    logger.debug(f"  Loading VSV via parent...")
                     log_gpu_memory("load_VSV(before)")
                 try:
                     super().load(key, usedNe)
@@ -2254,93 +2178,93 @@ class PropagatorWithCurrent(Propagator):
                             hasattr(self, "perambulator_data")
                             and self.perambulator_data is not None
                         ):
-                            print(
+                            logger.debug(
                                 f"    VSV loaded successfully, shape: {self.perambulator_data.shape}"
                             )
                         else:
-                            print(f"    VSV loaded, but perambulator_data is None")
+                            logger.debug(f"    VSV loaded, but perambulator_data is None")
                 except Exception as e:
                     if self.debug:
-                        print(f"    ERROR loading VSV: {e}")
+                        logger.debug(f"    ERROR loading VSV: {e}")
                     raise
             else:
                 if self.debug:
-                    print(f"  Skipping VSV (perambulator is None)")
+                    logger.debug(f"  Skipping VSV (perambulator is None)")
 
             if self.vsp_propagator is not None:
                 if self.debug:
-                    print(f"  Loading VSP...")
+                    logger.debug(f"  Loading VSP...")
                     log_gpu_memory("load_VSP(before)")
                 try:
                     self.vsp_data = self.vsp_propagator.load(key)
                     if self.debug:
                         log_gpu_memory("load_VSP(after)")
                         if self.vsp_data is not None:
-                            print(
+                            logger.debug(
                                 f"    VSP loaded successfully, shape: {self.vsp_data.shape}"
                             )
                         else:
-                            print(f"    VSP load returned None")
+                            logger.debug(f"    VSP load returned None")
                 except Exception as e:
                     if self.debug:
-                        print(f"    ERROR loading VSP: {e}")
+                        logger.debug(f"    ERROR loading VSP: {e}")
                     raise
             else:
                 if self.debug:
-                    print(f"  Skipping VSP (vsp_propagator is None)")
+                    logger.debug(f"  Skipping VSP (vsp_propagator is None)")
 
             if self.psv_propagator is not None:
                 if self.debug:
-                    print(f"  Loading PSV...")
+                    logger.debug(f"  Loading PSV...")
                     log_gpu_memory("load_PSV(before)")
                 try:
                     self.psv_data = self.psv_propagator.load(key)
                     if self.debug:
                         log_gpu_memory("load_PSV(after)")
                         if self.psv_data is not None:
-                            print(
+                            logger.debug(
                                 f"    PSV loaded successfully, shape: {self.psv_data.shape}"
                             )
                         else:
-                            print(f"    PSV load returned None")
+                            logger.debug(f"    PSV load returned None")
                 except Exception as e:
                     if self.debug:
-                        print(f"    ERROR loading PSV: {e}")
+                        logger.debug(f"    ERROR loading PSV: {e}")
                     raise
             else:
                 if self.debug:
-                    print(f"  Skipping PSV (psv_propagator is None)")
+                    logger.debug(f"  Skipping PSV (psv_propagator is None)")
 
             if self.psp_propagator is not None:
                 if self.debug:
-                    print(f"  Loading PSP...")
+                    logger.debug(f"  Loading PSP...")
                     log_gpu_memory("load_PSP(before)")
                 try:
                     self.psp_data = self.psp_propagator.load(key)
                     if self.debug:
                         log_gpu_memory("load_PSP(after)")
                         if self.psp_data is not None:
-                            print(
+                            logger.debug(
                                 f"    PSP loaded successfully, shape: {self.psp_data.shape}"
                             )
                         else:
-                            print(f"    PSP load returned None")
+                            logger.debug(f"    PSP load returned None")
                 except Exception as e:
                     if self.debug:
-                        print(f"    ERROR loading PSP: {e}")
+                        logger.debug(f"    ERROR loading PSP: {e}")
                     raise
             else:
                 if self.debug:
-                    print(f"  Skipping PSP (psp_propagator is None)")
+                    logger.debug(f"  Skipping PSP (psp_propagator is None)")
 
             # Load overlap matrix data from file
             if self.overlap_matrix is not None:
                 if self.debug:
-                    print(f"  Loading overlap matrix from file...")
+                    logger.debug(f"  Loading overlap matrix from file...")
                     log_gpu_memory("load_overlap_matrix(before)")
                 self.overlap_matrix_data = self.overlap_matrix.load(key)[:]
                 if self.debug:
-                    print(
+                    logger.debug(
                         f"    overlap_matrix_data.shape: {self.overlap_matrix_data.shape}"
                     )
                     log_gpu_memory("load_overlap_matrix(after)")
@@ -2368,16 +2292,16 @@ class PropagatorWithCurrent(Propagator):
             self.usedNp = usedNp
 
             if self.debug:
-                print(f"\n  Load completed successfully")
-                print(f"  Updated self.key to: {self.key}")
-                print(f"  Updated self.usedNe to: {self.usedNe}")
-                print(f"  Updated self.usedNp to: {self.usedNp}")
-                print(f"{'='*80}\n")
+                logger.debug(f"\n  Load completed successfully")
+                logger.debug(f"  Updated self.key to: {self.key}")
+                logger.debug(f"  Updated self.usedNe to: {self.usedNe}")
+                logger.debug(f"  Updated self.usedNp to: {self.usedNp}")
+                logger.debug(f"{'='*80}\n")
                 log_gpu_memory(f"PropagatorWithCurrent.load(after, key={key})")
         else:
             if self.debug:
-                print(f"  Key unchanged, skipping load")
-                print(f"{'='*80}\n")
+                logger.debug(f"  Key unchanged, skipping load")
+                logger.debug(f"{'='*80}\n")
                 log_gpu_memory(f"PropagatorWithCurrent.load(skipped, key={key})")
 
     def get(self, t_source, t_sink):
@@ -2388,10 +2312,10 @@ class PropagatorWithCurrent(Propagator):
         Only raises error if data is not available.
         """
         if self.debug:
-            print(f"\nPropagatorWithCurrent.get(VSV) called:")
-            print(f"  t_source: {t_source} (type: {type(t_source).__name__})")
-            print(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
-            print(
+            logger.debug(f"\nPropagatorWithCurrent.get(VSV) called:")
+            logger.debug(f"  t_source: {t_source} (type: {type(t_source).__name__})")
+            logger.debug(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
+            logger.debug(
                 f"  perambulator_data available: {self.perambulator_data is not None}"
             )
 
@@ -2399,11 +2323,11 @@ class PropagatorWithCurrent(Propagator):
             # Delegate to parent which handles caching and usedNe slicing
             result = super().get(t_source, t_sink)
             if self.debug:
-                print(f"  Result shape: {result.shape}")
+                logger.debug(f"  Result shape: {result.shape}")
             return result
         else:
             if self.debug:
-                print(f"  ERROR: VSV propagator not available!")
+                logger.debug(f"  ERROR: VSV propagator not available!")
             raise ValueError(
                 "VSV propagator not provided but is required for this diagram"
             )
@@ -2497,14 +2421,14 @@ class PropagatorWithCurrent(Propagator):
             If one time is int and the other is array-like: [t, Ns, Ns, ...] with same tail ordering
         """
         if self.debug:
-            print(f"\nPropagatorWithCurrent.get_VSP() called:")
-            print(f"  t_source: {t_source} (type: {type(t_source).__name__})")
-            print(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
-            print(f"  vsp_data available: {self.vsp_data is not None}")
+            logger.debug(f"\nPropagatorWithCurrent.get_VSP() called:")
+            logger.debug(f"  t_source: {t_source} (type: {type(t_source).__name__})")
+            logger.debug(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
+            logger.debug(f"  vsp_data available: {self.vsp_data is not None}")
             if self.vsp_data is not None:
-                print(f"  vsp_data.shape: {self.vsp_data.shape}")
-            print(f"  usedNe: {getattr(self, 'usedNe', None)}")
-            print(f"  usedNp: {getattr(self, 'usedNp', None)}")
+                logger.debug(f"  vsp_data.shape: {self.vsp_data.shape}")
+            logger.debug(f"  usedNe: {getattr(self, 'usedNe', None)}")
+            logger.debug(f"  usedNp: {getattr(self, 'usedNp', None)}")
 
         # Populate caches based on which time is int (anchor choice same as Propagator.get)
         if isinstance(t_source, int) and isinstance(t_sink, int):
@@ -2512,18 +2436,18 @@ class PropagatorWithCurrent(Propagator):
             if self.vsp_cached_time == t_source:
                 out = self.vsp_cache[(t_sink - t_source) % self.Lt]
                 if self.debug:
-                    print(f"    VSP get(two-int, cached): shape={out.shape}")
+                    logger.debug(f"    VSP get(two-int, cached): shape={out.shape}")
                 return out
             elif self.psv_cached_time == t_sink:
                 out = self.psv_dagger[(t_source - t_sink) % self.Lt]
                 if self.debug:
-                    print(f"    VSP get(two-int, cached dagger): shape={out.shape}")
+                    logger.debug(f"    VSP get(two-int, cached dagger): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.vsp_data is None:
                     if self.debug:
-                        print(f"  ERROR: VSP propagator not available!")
+                        logger.debug(f"  ERROR: VSP propagator not available!")
                     raise ValueError(
                         "VSP propagator not provided but is required for this diagram"
                     )
@@ -2536,7 +2460,7 @@ class PropagatorWithCurrent(Propagator):
                     :,
                 ]
                 if self.debug:
-                    print(f"    after slice: {vsp_cache_local.shape}")
+                    logger.debug(f"    after slice: {vsp_cache_local.shape}")
 
                 if cache:
                     self.vsp_cache = vsp_cache_local
@@ -2547,8 +2471,8 @@ class PropagatorWithCurrent(Propagator):
                     out = vsp_cache_local[(t_sink - t_source) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    VSP get(two-int, {'cached' if cache else 'uncached'}): shape={out.shape}"
                     )
                 return out
@@ -2557,13 +2481,13 @@ class PropagatorWithCurrent(Propagator):
             if self.vsp_cached_time == t_source:
                 out = self.vsp_cache[(t_sink - t_source) % self.Lt]
                 if self.debug:
-                    print(f"    VSP get(tsrc-int, cached): shape={out.shape}")
+                    logger.debug(f"    VSP get(tsrc-int, cached): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.vsp_data is None:
                     if self.debug:
-                        print(f"  ERROR: VSP propagator not available!")
+                        logger.debug(f"  ERROR: VSP propagator not available!")
                     raise ValueError(
                         "VSP propagator not provided but is required for this diagram"
                     )
@@ -2576,7 +2500,7 @@ class PropagatorWithCurrent(Propagator):
                     :,
                 ]
                 if self.debug:
-                    print(f"    after slice: {vsp_cache_local.shape}")
+                    logger.debug(f"    after slice: {vsp_cache_local.shape}")
 
                 if cache:
                     self.vsp_cache = vsp_cache_local
@@ -2587,8 +2511,8 @@ class PropagatorWithCurrent(Propagator):
                     out = vsp_cache_local[(t_sink - t_source) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    VSP get(tsrc-int, {'cached' if cache else 'uncached'}): shape={out.shape}"
                     )
                 return out
@@ -2597,13 +2521,13 @@ class PropagatorWithCurrent(Propagator):
             if self.psv_cached_time == t_sink:
                 out = self.psv_dagger[(t_source - t_sink) % self.Lt]
                 if self.debug:
-                    print(f"    VSP get(tsink-int, cached dagger): shape={out.shape}")
+                    logger.debug(f"    VSP get(tsink-int, cached dagger): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.psv_data is None:
                     if self.debug:
-                        print(
+                        logger.debug(
                             f"  ERROR: PSV propagator not available (needed for VSP dagger)!"
                         )
                     raise ValueError(
@@ -2628,7 +2552,7 @@ class PropagatorWithCurrent(Propagator):
                     out = psv_dagger_local[(t_source - t_sink) % self.Lt]
 
                 if self.debug:
-                    print(
+                    logger.debug(
                         f"    VSP get(tsink-int, {'cached' if cache else 'uncached'} dagger): shape={out.shape}"
                     )
                 return out
@@ -2649,32 +2573,32 @@ class PropagatorWithCurrent(Propagator):
             If one time is int and the other is array-like: [t, Ns, Ns, Np, Nc, Ne]
         """
         if self.debug:
-            print(f"\nPropagatorWithCurrent.get_PSV() called:")
-            print(f"  t_source: {t_source} (type: {type(t_source).__name__})")
-            print(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
-            print(f"  psv_data available: {self.psv_data is not None}")
+            logger.debug(f"\nPropagatorWithCurrent.get_PSV() called:")
+            logger.debug(f"  t_source: {t_source} (type: {type(t_source).__name__})")
+            logger.debug(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
+            logger.debug(f"  psv_data available: {self.psv_data is not None}")
             if self.psv_data is not None:
-                print(f"  psv_data.shape: {self.psv_data.shape}")
-            print(f"  usedNe: {getattr(self, 'usedNe', None)}")
-            print(f"  usedNp: {getattr(self, 'usedNp', None)}")
+                logger.debug(f"  psv_data.shape: {self.psv_data.shape}")
+            logger.debug(f"  usedNe: {getattr(self, 'usedNe', None)}")
+            logger.debug(f"  usedNp: {getattr(self, 'usedNp', None)}")
 
         if isinstance(t_source, int) and isinstance(t_sink, int):
             # Check if we have cached data
             if self.psv_cached_time == t_source:
                 out = self.psv_cache[(t_sink - t_source) % self.Lt]
                 if self.debug:
-                    print(f"    PSV get(two-int, cached): shape={out.shape}")
+                    logger.debug(f"    PSV get(two-int, cached): shape={out.shape}")
                 return out
             elif self.vsp_cached_time == t_sink:
                 out = self.vsp_dagger[(t_source - t_sink) % self.Lt]
                 if self.debug:
-                    print(f"    PSV get(two-int, cached dagger): shape={out.shape}")
+                    logger.debug(f"    PSV get(two-int, cached dagger): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.psv_data is None:
                     if self.debug:
-                        print(f"  ERROR: PSV propagator not available!")
+                        logger.debug(f"  ERROR: PSV propagator not available!")
                     raise ValueError(
                         "PSV propagator not provided but is required for this diagram"
                     )
@@ -2687,7 +2611,7 @@ class PropagatorWithCurrent(Propagator):
                     : self.usedNe if self.usedNe is not None else None,
                 ]
                 if self.debug:
-                    print(f"    after slice: {psv_cache_local.shape}")
+                    logger.debug(f"    after slice: {psv_cache_local.shape}")
 
                 if cache:
                     self.psv_cache = psv_cache_local
@@ -2698,8 +2622,8 @@ class PropagatorWithCurrent(Propagator):
                     out = psv_cache_local[(t_sink - t_source) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    PSV get(two-int, {'cached' if cache else 'uncached'}): shape={out.shape}"
                     )
                 return out
@@ -2708,13 +2632,13 @@ class PropagatorWithCurrent(Propagator):
             if self.psv_cached_time == t_source:
                 out = self.psv_cache[(t_sink - t_source) % self.Lt]
                 if self.debug:
-                    print(f"    PSV get(tsrc-int, cached): shape={out.shape}")
+                    logger.debug(f"    PSV get(tsrc-int, cached): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.psv_data is None:
                     if self.debug:
-                        print(f"  ERROR: PSV propagator not available!")
+                        logger.debug(f"  ERROR: PSV propagator not available!")
                     raise ValueError(
                         "PSV propagator not provided but is required for this diagram"
                     )
@@ -2727,7 +2651,7 @@ class PropagatorWithCurrent(Propagator):
                     : self.usedNe if self.usedNe is not None else None,
                 ]
                 if self.debug:
-                    print(f"    after slice: {psv_cache_local.shape}")
+                    logger.debug(f"    after slice: {psv_cache_local.shape}")
 
                 if cache:
                     self.psv_cache = psv_cache_local
@@ -2738,8 +2662,8 @@ class PropagatorWithCurrent(Propagator):
                     out = psv_cache_local[(t_sink - t_source) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    PSV get(tsrc-int, {'cached' if cache else 'uncached'}): shape={out.shape}"
                     )
                 return out
@@ -2748,13 +2672,13 @@ class PropagatorWithCurrent(Propagator):
             if self.vsp_cached_time == t_sink:
                 out = self.vsp_dagger[(t_source - t_sink) % self.Lt]
                 if self.debug:
-                    print(f"    PSV get(tsink-int, cached dagger): shape={out.shape}")
+                    logger.debug(f"    PSV get(tsink-int, cached dagger): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.vsp_data is None:
                     if self.debug:
-                        print(
+                        logger.debug(
                             f"  ERROR: VSP propagator not available (needed for PSV dagger)!"
                         )
                     raise ValueError(
@@ -2779,7 +2703,7 @@ class PropagatorWithCurrent(Propagator):
                     out = vsp_dagger_local[(t_source - t_sink) % self.Lt]
 
                 if self.debug:
-                    print(
+                    logger.debug(
                         f"    PSV get(tsink-int, {'cached' if cache else 'uncached'} dagger): shape={out.shape}"
                     )
                 return out
@@ -2800,17 +2724,17 @@ class PropagatorWithCurrent(Propagator):
             If one time is int and the other is array-like: [t, Ns, Ns, Np_snk, Nc, Np_src, Nc]
         """
         if self.debug:
-            print(f"\nPropagatorWithCurrent.get_PSP() called:")
-            print(f"  t_source: {t_source} (type: {type(t_source).__name__})")
-            print(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
-            print(f"  psp_data available: {self.psp_data is not None}")
+            logger.debug(f"\nPropagatorWithCurrent.get_PSP() called:")
+            logger.debug(f"  t_source: {t_source} (type: {type(t_source).__name__})")
+            logger.debug(f"  t_sink: {t_sink} (type: {type(t_sink).__name__})")
+            logger.debug(f"  psp_data available: {self.psp_data is not None}")
             if self.psp_data is not None:
-                print(f"  psp_data.shape: {self.psp_data.shape}")
-            print(f"  usedNp: {getattr(self, 'usedNp', None)}")
+                logger.debug(f"  psp_data.shape: {self.psp_data.shape}")
+            logger.debug(f"  usedNp: {getattr(self, 'usedNp', None)}")
 
         if self.psp_data is None:
             if self.debug:
-                print(f"  ERROR: PSP propagator not available!")
+                logger.debug(f"  ERROR: PSP propagator not available!")
             raise ValueError(
                 "PSP propagator not provided but is required for this diagram"
             )
@@ -2819,12 +2743,12 @@ class PropagatorWithCurrent(Propagator):
             if self.psp_cached_time == t_source:
                 out = self.psp_cache[(t_sink - t_source) % self.Lt]
                 if self.debug:
-                    print(f"    PSP get(two-int, cached): shape={out.shape}")
+                    logger.debug(f"    PSP get(two-int, cached): shape={out.shape}")
                 return out
             elif self.psp_cached_time == t_sink:
                 out = self.psp_dagger[(t_source - t_sink) % self.Lt]
                 if self.debug:
-                    print(f"    PSP get(two-int, cached dagger): shape={out.shape}")
+                    logger.debug(f"    PSP get(two-int, cached dagger): shape={out.shape}")
                 return out
             else:
                 psp_cache_local = self.psp_data[
@@ -2835,7 +2759,7 @@ class PropagatorWithCurrent(Propagator):
                         ..., : self.usedNp, :, : self.usedNp, :
                     ]
                     if self.debug:
-                        print(f"    after slice: {psp_cache_local.shape}")
+                        logger.debug(f"    after slice: {psp_cache_local.shape}")
 
                 if cache:
                     # Save to cache
@@ -2848,8 +2772,8 @@ class PropagatorWithCurrent(Propagator):
                     out = psp_cache_local[(t_sink - t_source) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    PSP get(two-int, {'cached' if cache else 'uncached'}): shape={out.shape}"
                     )
                 return out
@@ -2858,7 +2782,7 @@ class PropagatorWithCurrent(Propagator):
             if self.psp_cached_time == t_source:
                 out = self.psp_cache[(t_sink - t_source) % self.Lt]
                 if self.debug:
-                    print(f"    PSP get(tsrc-int, cached): shape={out.shape}")
+                    logger.debug(f"    PSP get(tsrc-int, cached): shape={out.shape}")
                 return out
             else:
                 psp_cache_local = self.psp_data[t_source]
@@ -2867,7 +2791,7 @@ class PropagatorWithCurrent(Propagator):
                         ..., : self.usedNp, :, : self.usedNp, :
                     ]
                     if self.debug:
-                        print(f"    after slice: {psp_cache_local.shape}")
+                        logger.debug(f"    after slice: {psp_cache_local.shape}")
 
                 if cache:
                     self.psp_cache = psp_cache_local
@@ -2878,8 +2802,8 @@ class PropagatorWithCurrent(Propagator):
                     out = psp_cache_local[(t_sink - t_source) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    PSP get(tsrc-int, {'cached' if cache else 'uncached'}): shape={out.shape}"
                     )
                 return out
@@ -2888,13 +2812,13 @@ class PropagatorWithCurrent(Propagator):
             if self.psp_cached_time == t_sink:
                 out = self.psp_dagger[(t_source - t_sink) % self.Lt]
                 if self.debug:
-                    print(f"    PSP get(tsink-int, cached dagger): shape={out.shape}")
+                    logger.debug(f"    PSP get(tsink-int, cached dagger): shape={out.shape}")
                 return out
             else:
                 # Need to compute new data
                 if self.debug:
-                    print(f"  PSP shape process (dagger):")
-                    print(
+                    logger.debug(f"  PSP shape process (dagger):")
+                    logger.debug(
                         f"    raw psp_data[t_sink={t_sink}]: {self.psp_data[t_sink].shape}"
                     )
                 psp_cache_local = self.psp_data[t_sink]
@@ -2903,12 +2827,12 @@ class PropagatorWithCurrent(Propagator):
                         ..., : self.usedNp, :, : self.usedNp, :
                     ]
                     if self.debug:
-                        print(f"    after slice: {psp_cache_local.shape}")
+                        logger.debug(f"    after slice: {psp_cache_local.shape}")
                 psp_dagger_local = (
                     self._dagger_psp(psp_cache_local) if not cache else None
                 )
                 if self.debug and psp_dagger_local is not None:
-                    print(f"    after dagger: {psp_dagger_local.shape}")
+                    logger.debug(f"    after dagger: {psp_dagger_local.shape}")
 
                 if cache:
                     self.psp_cache = psp_cache_local
@@ -2919,8 +2843,8 @@ class PropagatorWithCurrent(Propagator):
                     out = psp_dagger_local[(t_source - t_sink) % self.Lt]
 
                 if self.debug:
-                    print(f"    final output: {out.shape}")
-                    print(
+                    logger.debug(f"    final output: {out.shape}")
+                    logger.debug(
                         f"    PSP get(tsink-int, {'cached' if cache else 'uncached'} dagger): shape={out.shape}"
                     )
                 return out
@@ -2958,9 +2882,9 @@ class PropagatorWithCurrent(Propagator):
             f"get_VSP_highmode(before, t_source={t_source}, t_sink={t_sink})"
         )
         if self.debug:
-            print(f"\nget_VSP_highmode() called:")
-            print(f"  t_source: {t_source}, t_sink: {t_sink}")
-            print(f"  usedNe_source: {usedNe_source}, self.usedNe: {self.usedNe}")
+            logger.debug(f"\nget_VSP_highmode() called:")
+            logger.debug(f"  t_source: {t_source}, t_sink: {t_sink}")
+            logger.debug(f"  usedNe_source: {usedNe_source}, self.usedNe: {self.usedNe}")
 
         backend = get_backend()
 
@@ -3038,7 +2962,7 @@ class PropagatorWithCurrent(Propagator):
                 tilde_S = S_vsp - correction
                 if should_cache_highmode:
                     if self.debug:
-                        print(f"caching full tilde_S_vsp for t_source={t_source}")
+                        logger.debug(f"caching full tilde_S_vsp for t_source={t_source}")
                     self.tilde_S_vsp_cache = tilde_S
                     self.tilde_S_vsp_dagger = self._dagger_vsp(tilde_S)
                     self.tilde_S_vsp_cached_time = t_source
@@ -3055,13 +2979,13 @@ class PropagatorWithCurrent(Propagator):
                 tilde_S = S_vsp - correction
                 if should_cache_highmode:
                     if self.debug:
-                        print(f"caching full tilde_S_vsp for t_source={t_source}")
+                        logger.debug(f"caching full tilde_S_vsp for t_source={t_source}")
                     self.tilde_S_psv_dagger = tilde_S
                     self.tilde_S_psv_cache = self._dagger_vsp(tilde_S)
                     self.tilde_S_psv_cached_time = t_sink
                     return self.tilde_S_psv_dagger
                 if self.debug:
-                    print(f"  tilde_S_vsp shape: {tilde_S.shape}")
+                    logger.debug(f"  tilde_S_vsp shape: {tilde_S.shape}")
 
                 log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_sink=int)")
                 return tilde_S[t_rel]
@@ -3098,9 +3022,9 @@ class PropagatorWithCurrent(Propagator):
             f"get_PSV_highmode(before, t_source={t_source}, t_sink={t_sink})"
         )
         if self.debug:
-            print(f"\nget_PSV_highmode() called:")
-            print(f"  t_source: {t_source}, t_sink: {t_sink}")
-            print(f"  usedNe_sink: {usedNe_sink}, self.usedNe: {self.usedNe}")
+            logger.debug(f"\nget_PSV_highmode() called:")
+            logger.debug(f"  t_source: {t_source}, t_sink: {t_sink}")
+            logger.debug(f"  usedNe_sink: {usedNe_sink}, self.usedNe: {self.usedNe}")
 
         backend = get_backend()
 
@@ -3120,12 +3044,12 @@ class PropagatorWithCurrent(Propagator):
                 if self.tilde_S_psv_cached_time == t_source:
                     t_rel = (t_sink - t_source) % self.Lt
                     if self.debug:
-                        print(f"  Using cached tilde_S_psv")
+                        logger.debug(f"  Using cached tilde_S_psv")
                     return self.tilde_S_psv_cache[t_rel]
                 elif self.tilde_S_vsp_cached_time == t_sink:
                     t_rel = (t_source - t_sink) % self.Lt
                     if self.debug:
-                        print(f"  Using cached tilde_S_vsp_dagger")
+                        logger.debug(f"  Using cached tilde_S_vsp_dagger")
                     t_rel = (t_source - t_sink) % self.Lt
                     return self.tilde_S_vsp_dagger[t_rel]
             else:
@@ -3133,13 +3057,13 @@ class PropagatorWithCurrent(Propagator):
                     t_rel = (t_sink - t_source) % self.Lt
                     if self.tilde_S_psv_cached_time == t_source:
                         if self.debug:
-                            print(f"  Using cached tilde_S_psv")
+                            logger.debug(f"  Using cached tilde_S_psv")
                         return self.tilde_S_psv_cache[t_rel]
                 else:
                     t_rel = (t_source - t_sink) % self.Lt
                     if self.tilde_S_psv_cached_time == t_sink:
                         if self.debug:
-                            print(f"  Using cached tilde_S_vsp_dagger")
+                            logger.debug(f"  Using cached tilde_S_vsp_dagger")
                         return self.tilde_S_vsp_dagger[t_rel]
 
         # Get original PSV: S_{xa,i} (cache unprojected when usedNe != self.usedNe)
@@ -3195,7 +3119,7 @@ class PropagatorWithCurrent(Propagator):
                 tilde_S = S_psv - correction
                 if should_cache_highmode:
                     if self.debug:
-                        print(f"caching full tilde_S_psv for t_source={t_source}")
+                        logger.debug(f"caching full tilde_S_psv for t_source={t_source}")
                     self.tilde_S_psv_cache = tilde_S
                     self.tilde_S_psv_dagger = self._dagger_psv(tilde_S)
                     self.tilde_S_psv_cached_time = t_source
@@ -3217,7 +3141,7 @@ class PropagatorWithCurrent(Propagator):
                 tilde_S = S_psv - correction
                 if should_cache_highmode:
                     if self.debug:
-                        print(f"caching full tilde_S_psv for t_source={t_source}")
+                        logger.debug(f"caching full tilde_S_psv for t_source={t_source}")
                     self.tilde_S_psv_cache = tilde_S
                     self.tilde_S_psv_dagger = self._dagger_psv(tilde_S)
                     self.tilde_S_psv_cached_time = t_source
@@ -3259,9 +3183,9 @@ class PropagatorWithCurrent(Propagator):
             f"get_PSP_highmode(before, t_source={t_source}, t_sink={t_sink})"
         )
         if self.debug:
-            print(f"\nget_PSP_highmode() called:")
-            print(f"  t_source: {t_source}, t_sink: {t_sink}")
-            print(
+            logger.debug(f"\nget_PSP_highmode() called:")
+            logger.debug(f"  t_source: {t_source}, t_sink: {t_sink}")
+            logger.debug(
                 f"  usedNe_sink: {usedNe_sink}, usedNe_source: {usedNe_source}, self.usedNe: {self.usedNe}"
             )
 
@@ -3295,13 +3219,13 @@ class PropagatorWithCurrent(Propagator):
                     t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
                     if self.tilde_S_psp_cached_time == t_source:
                         if self.debug:
-                            print(f"  Using cached tilde_S_psp")
+                            logger.debug(f"  Using cached tilde_S_psp")
                         return self.tilde_S_psp_cache[t_rel]
                 else:  # t_sink is int
                     t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
                     if self.tilde_S_psp_cached_time == t_sink:
                         if self.debug:
-                            print(f"  Using cached tilde_S_psp (dagger)")
+                            logger.debug(f"  Using cached tilde_S_psp (dagger)")
                         return self.tilde_S_psp_dagger[t_rel]
 
         # Get original PSP: S_{xa,yb}
@@ -3416,29 +3340,22 @@ class PropagatorWithCurrent(Propagator):
             if should_cache_highmode:
                 if isinstance(t_source, int):
                     if self.debug:
-                        print(f"caching full tilde_S_psp for t_source={t_source}")
+                        logger.debug(f"caching full tilde_S_psp for t_source={t_source}")
                     self.tilde_S_psp_cache = tilde_S
                     self.tilde_S_psp_dagger = self._dagger_psp(tilde_S)
                     self.tilde_S_psp_cached_time = t_source
                 else:  # t_sink is int
                     if self.debug:
-                        print(f"caching full tilde_S_psp for t_sink={t_sink}")
+                        logger.debug(f"caching full tilde_S_psp for t_sink={t_sink}")
                     self.tilde_S_psp_cache = self._dagger_psp(tilde_S)
                     self.tilde_S_psp_dagger = tilde_S
                     self.tilde_S_psp_cached_time = t_sink
 
         log_gpu_memory(f"get_PSP_highmode(after, multi_time)")
         if self.debug:
-            print(f"  tilde_S_psp shape: {tilde_S.shape}")
+            logger.debug(f"  tilde_S_psp shape: {tilde_S.shape}")
 
         return tilde_S
-
-
-def _vertex_particle(vertex):
-    """Unpack (particle, flavor_stats) from _build_combined; Meson stays unchanged."""
-    if isinstance(vertex, tuple) and len(vertex) == 2:
-        return vertex[0]
-    return vertex
 
 
 def compute_diagrams_multitime(
@@ -3473,7 +3390,7 @@ def compute_diagrams_multitime(
     for diagram in diagrams:
         if hasattr(diagram, "expanded_diagrams") and diagram.expanded_diagrams:
             if debug:
-                print(
+                logger.debug(
                     f"Auto-expanding diagram into {len(diagram.expanded_diagrams)} diagrams"
                 )
             diagrams_to_compute.extend(diagram.expanded_diagrams)
@@ -3481,7 +3398,7 @@ def compute_diagrams_multitime(
             diagrams_to_compute.append(diagram)
 
     if debug and len(diagrams_to_compute) != len(diagrams):
-        print(
+        logger.debug(
             f"Total diagrams after expansion: {len(diagrams_to_compute)} (from {len(diagrams)} input diagrams)"
         )
 
@@ -3496,28 +3413,24 @@ def compute_diagrams_multitime(
                     raise NotImplementedError("only support one multitime yet")
     for diagram_idx, diagram in enumerate(diagrams_to_compute):
         if debug:
-            print(f"\n{'='*80}")
-            print(f"Processing diagram {diagram_idx}")
-            print(f"{'='*80}")
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"Processing diagram {diagram_idx}")
+            logger.debug(f"{'='*80}")
         diagram_value.append(1.0)
         for contraction_idx, (operands, subscripts) in enumerate(
             zip(diagram.operands, diagram.subscripts)
         ):
             if debug:
-                print(f"\n  Contraction {contraction_idx}:")
-                print(f"  Original subscripts: {subscripts}")
+                logger.debug(f"\n  Contraction {contraction_idx}:")
+                logger.debug(f"  Original subscripts: {subscripts}")
 
             have_multitime = False
             subscripts = subscripts.split(",")
             idx = 0
             operands_data = []
 
-            # Track min usedNe per vertex side across all connected propagators.
-            # vertex_min_ne[v_idx] = {"l": min_ne_l, "r": min_ne_r}
-            vertex_min_ne = {}
-
             if debug:
-                print(f"  Propagators (operands[0]):")
+                logger.debug(f"  Propagators (operands[0]):")
             for prop_idx, item in enumerate(operands[0]):
                 propagator = propagator_list[item[0]]
 
@@ -3525,57 +3438,25 @@ def compute_diagrams_multitime(
                 if hasattr(diagram, "propagator_types") and diagram.propagator_types:
                     prop_type = diagram.propagator_types[contraction_idx][prop_idx]
                     if debug:
-                        print(f"    [{prop_idx}] Propagator type: {prop_type}")
+                        logger.debug(f"    [{prop_idx}] Propagator type: {prop_type}")
                 else:
                     prop_type = "VSV"  # Default for backward compatibility
                     if debug:
-                        print(
+                        logger.debug(
                             f"    [{prop_idx}] No propagator type info, defaulting to VSV"
                         )
 
                 # Extract vertex attributes (item[1]=source/right, item[2]=sink/left)
-                src_vertex = _vertex_particle(vertex_list[item[1]])
-                snk_vertex = _vertex_particle(vertex_list[item[2]])
+                src_vertex = vertex_list[item[1]]
+                snk_vertex = vertex_list[item[2]]
 
-                usedNe_source = getattr(
-                    src_vertex, "usedNe_r", getattr(src_vertex, "usedNe", None)
-                )
-                usedNe_sink = getattr(
-                    snk_vertex, "usedNe_l", getattr(snk_vertex, "usedNe", None)
-                )
-
-                # Min-merge: propagator usedNe vs vertex usedNe on each side
-                prop_usedNe = getattr(propagator, "usedNe", None)
-                if prop_usedNe is not None:
-                    if usedNe_source is not None:
-                        usedNe_source = min(usedNe_source, prop_usedNe)
-                    else:
-                        usedNe_source = prop_usedNe
-                    if usedNe_sink is not None:
-                        usedNe_sink = min(usedNe_sink, prop_usedNe)
-                    else:
-                        usedNe_sink = prop_usedNe
-
+                usedNe_source = getattr(src_vertex, "usedNe", None)
+                usedNe_sink = getattr(snk_vertex, "usedNe", None)
                 usedNp_source = getattr(src_vertex, "usedNp", None)
                 usedNp_sink = getattr(snk_vertex, "usedNp", None)
 
-                # Update per-vertex min Ne tracking
-                for v_idx, ne_val, side in [
-                    (item[1], usedNe_source, "r"),
-                    (item[2], usedNe_sink, "l"),
-                ]:
-                    if ne_val is not None:
-                        if v_idx not in vertex_min_ne:
-                            vertex_min_ne[v_idx] = {}
-                        if side in vertex_min_ne[v_idx]:
-                            vertex_min_ne[v_idx][side] = min(
-                                vertex_min_ne[v_idx][side], ne_val
-                            )
-                        else:
-                            vertex_min_ne[v_idx][side] = ne_val
-
                 if debug:
-                    print(
+                    logger.debug(
                         f"      Vertex attributes: source usedNe={usedNe_source}, usedNp={usedNp_source}; sink usedNe={usedNe_sink}, usedNp={usedNp_sink}"
                     )
 
@@ -3586,13 +3467,13 @@ def compute_diagrams_multitime(
                         prop_data = propagator.get(
                             time_list[item[1]], time_list[item[2]]
                         )
-                        # Slice both ends' usedNe (min-merged with propagator)
+                        # Slice both ends' usedNe
                         if usedNe_sink is not None:
                             prop_data = prop_data[..., :usedNe_sink, :]
                         if usedNe_source is not None:
                             prop_data = prop_data[..., :usedNe_source]
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get(t_source={time_list[item[1]]}, t_sink={time_list[item[2]]})"
                             )
                     elif prop_type == "VSP":
@@ -3602,7 +3483,7 @@ def compute_diagrams_multitime(
                             time_list[item[1]], time_list[item[2]], usedNe_source
                         )
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get_VSP_highmode with usedNe_source={usedNe_source}"
                             )
                         # Slice sink端 (vector) usedNe
@@ -3618,7 +3499,7 @@ def compute_diagrams_multitime(
                             time_list[item[1]], time_list[item[2]], usedNe_sink
                         )
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get_PSV_highmode with usedNe_sink={usedNe_sink}"
                             )
                         # Slice sink端 (point) usedNp
@@ -3637,7 +3518,7 @@ def compute_diagrams_multitime(
                             usedNe_source,
                         )
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get_PSP_highmode with usedNe_sink={usedNe_sink}, usedNe_source={usedNe_source}"
                             )
                         # Slice sink端 (point) usedNp
@@ -3651,7 +3532,7 @@ def compute_diagrams_multitime(
 
                     operands_data.append(prop_data)
                     if debug:
-                        print(
+                        logger.debug(
                             f"        shape: {prop_data.shape}, dtype: {prop_data.dtype}"
                         )
 
@@ -3670,53 +3551,45 @@ def compute_diagrams_multitime(
                         f"  Propagator type: {type(propagator).__name__}"
                     )
                     if debug:
-                        print(f"  ERROR: {error_msg}")
+                        logger.debug(f"  ERROR: {error_msg}")
                     raise RuntimeError(error_msg) from e
 
             if debug:
-                print(f"  Vertices (operands[1]):")
+                logger.debug(f"  Vertices (operands[1]):")
             for vertex_idx, item in enumerate(operands[1]):
-                vertex = _vertex_particle(vertex_list[item])
+                vertex = vertex_list[item]
 
                 # Determine vertex type from diagram
                 if hasattr(diagram, "vertex_types") and diagram.vertex_types:
                     vertex_type = diagram.vertex_types[contraction_idx][vertex_idx]
                     if debug:
-                        print(f"    [{idx}] Vertex type: {vertex_type}")
+                        logger.debug(f"    [{idx}] Vertex type: {vertex_type}")
                 else:
                     vertex_type = "V2V"  # Default for backward compatibility
                     if debug:
-                        print(f"    [{idx}] No vertex type info, defaulting to V2V")
+                        logger.debug(f"    [{idx}] No vertex type info, defaulting to V2V")
 
                 # Get vertex data based on type
                 if vertex_type == "V2V":
                     vertex_data = vertex.get(time_list[item])
-                    # Slice vertex Ne dims to match min-merged propagator Ne
-                    if item in vertex_min_ne:
-                        min_l = vertex_min_ne[item].get("l")
-                        min_r = vertex_min_ne[item].get("r")
-                        if min_l is not None:
-                            vertex_data = vertex_data[..., :min_l, :]
-                        if min_r is not None:
-                            vertex_data = vertex_data[..., :, :min_r]
                     if debug:
-                        print(f"      Called vertex[{item}].get(t={time_list[item]})")
+                        logger.debug(f"      Called vertex[{item}].get(t={time_list[item]})")
                 elif vertex_type == "V2P":
                     vertex_data = vertex.get_v2p(time_list[item])
                     if debug:
-                        print(
+                        logger.debug(
                             f"      Called vertex[{item}].get_v2p(t={time_list[item]})"
                         )
                 elif vertex_type == "P2V":
                     vertex_data = vertex.get_p2v(time_list[item])
                     if debug:
-                        print(
+                        logger.debug(
                             f"      Called vertex[{item}].get_p2v(t={time_list[item]})"
                         )
                 elif vertex_type == "P2P":
                     vertex_data = vertex.get_p2p(time_list[item])
                     if debug:
-                        print(
+                        logger.debug(
                             f"      Called vertex[{item}].get_p2p(t={time_list[item]})"
                         )
                 else:
@@ -3724,7 +3597,7 @@ def compute_diagrams_multitime(
 
                 operands_data.append(vertex_data)
                 if debug:
-                    print(
+                    logger.debug(
                         f"        shape: {vertex_data.shape}, dtype: {vertex_data.dtype}"
                     )
                 if not isinstance(time_list[item], int):
@@ -3742,18 +3615,19 @@ def compute_diagrams_multitime(
 
             final_subscripts = ",".join(subscripts)
             if debug:
-                print(f"  Final subscripts: {final_subscripts}")
-                print(f"  Operands summary:")
+                logger.debug(f"  Final subscripts: {final_subscripts}")
+                logger.debug(f"  Operands summary:")
                 for op_idx, op in enumerate(operands_data):
-                    print(
+                    logger.debug(
                         f"    operand[{op_idx}]: shape={op.shape if hasattr(op, 'shape') else type(op)}"
                     )
-                print(f"  Attempting contraction...")
+                logger.debug(f"  Attempting contraction...")
+
             result = contract(final_subscripts, *operands_data)
             diagram_value[-1] = diagram_value[-1] * result
 
             if debug:
-                print(
+                logger.debug(
                     f"  Contraction successful! Result shape: {result.shape if hasattr(result, 'shape') else type(result)}"
                 )
 
@@ -3762,8 +3636,8 @@ def compute_diagrams_multitime(
             scene_weight = diagram.scene_weights[0]
             diagram_value[-1] = diagram_value[-1] * scene_weight
             if debug:
-                print(f"\n  Applied scene_weight: {scene_weight}")
-                print(
+                logger.debug(f"\n  Applied scene_weight: {scene_weight}")
+                logger.debug(
                     f"  Final diagram value shape: {diagram_value[-1].shape if hasattr(diagram_value[-1], 'shape') else type(diagram_value[-1])}"
                 )
 
@@ -3781,22 +3655,22 @@ def compute_diagrams(
     diagram_value = []
     for diagram_idx, diagram in enumerate(diagrams):
         if debug:
-            print(f"\n{'='*80}")
-            print(f"Processing diagram {diagram_idx}")
-            print(f"{'='*80}")
+            logger.debug(f"\n{'='*80}")
+            logger.debug(f"Processing diagram {diagram_idx}")
+            logger.debug(f"{'='*80}")
         diagram_value.append(1.0)
         for contraction_idx, (operands, subscripts) in enumerate(
             zip(diagram.operands, diagram.subscripts)
         ):
             if debug:
-                print(f"\n  Contraction {contraction_idx}:")
-                print(f"  Subscripts: {subscripts}")
+                logger.debug(f"\n  Contraction {contraction_idx}:")
+                logger.debug(f"  Subscripts: {subscripts}")
 
             operands_data = []
             idx = 0
 
             if debug:
-                print(f"  Propagators (operands[0]):")
+                logger.debug(f"  Propagators (operands[0]):")
             for prop_idx, item in enumerate(operands[0]):
                 propagator = propagator_list[item[0]]
 
@@ -3804,11 +3678,11 @@ def compute_diagrams(
                 if hasattr(diagram, "propagator_types") and diagram.propagator_types:
                     prop_type = diagram.propagator_types[contraction_idx][prop_idx]
                     if debug:
-                        print(f"    [{prop_idx}] Propagator type: {prop_type}")
+                        logger.debug(f"    [{prop_idx}] Propagator type: {prop_type}")
                 else:
                     prop_type = "VSV"  # Default for backward compatibility
                     if debug:
-                        print(
+                        logger.debug(
                             f"    [{prop_idx}] No propagator type info, defaulting to VSV"
                         )
 
@@ -3820,7 +3694,7 @@ def compute_diagrams(
                             time_list[item[1]], time_list[item[2]]
                         )
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get(t_source={time_list[item[1]]}, t_sink={time_list[item[2]]})"
                             )
                     elif prop_type == "VSP":
@@ -3830,7 +3704,7 @@ def compute_diagrams(
                         )
                         prop_type = effective_type
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get_v2p(tsrc={time_list[item[1]]}, tsink={time_list[item[2]]}) -> effective_type={effective_type}"
                             )
                     elif prop_type == "PSV":
@@ -3840,7 +3714,7 @@ def compute_diagrams(
                         )
                         prop_type = effective_type
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get_p2v(tsrc={time_list[item[1]]}, tsink={time_list[item[2]]}) -> effective_type={effective_type}"
                             )
                     elif prop_type == "PSP":
@@ -3850,7 +3724,7 @@ def compute_diagrams(
                         )
                         prop_type = effective_type
                         if debug:
-                            print(
+                            logger.debug(
                                 f"      Called propagator.get_p2p(tsrc={time_list[item[1]]}, tsink={time_list[item[2]]}) -> effective_type={effective_type}"
                             )
                     else:
@@ -3858,7 +3732,7 @@ def compute_diagrams(
 
                     operands_data.append(prop_data)
                     if debug:
-                        print(
+                        logger.debug(
                             f"        shape: {prop_data.shape}, dtype: {prop_data.dtype}"
                         )
                     idx += 1
@@ -3870,17 +3744,17 @@ def compute_diagrams(
                         f"  Propagator type: {type(propagator).__name__}"
                     )
                     if debug:
-                        print(f"  ERROR: {error_msg}")
+                        logger.debug(f"  ERROR: {error_msg}")
                     raise RuntimeError(error_msg) from e
 
             if debug:
-                print(f"  Vertices (operands[1]):")
+                logger.debug(f"  Vertices (operands[1]):")
             for item in operands[1]:
-                vertex_data = _vertex_particle(vertex_list[item]).get(time_list[item])
+                vertex_data = vertex_list[item].get(time_list[item])
                 operands_data.append(vertex_data)
                 if debug:
-                    print(f"    [{idx}] vertex[{item}].get(t={time_list[item]})")
-                    print(
+                    logger.debug(f"    [{idx}] vertex[{item}].get(t={time_list[item]})")
+                    logger.debug(
                         f"        shape: {vertex_data.shape}, dtype: {vertex_data.dtype}"
                     )
                 idx += 1
@@ -3889,7 +3763,7 @@ def compute_diagrams(
             diagram_value[-1] *= result
 
             if debug:
-                print(
+                logger.debug(
                     f"  Contraction successful! Result shape: {result.shape if hasattr(result, 'shape') else type(result)}"
                 )
     return backend.asarray(diagram_value)
@@ -4286,87 +4160,6 @@ class Diagram(Symbol):
             if time in time_map:
                 self.time_list[i] = time_map[time]
 
-    def gen_flavor_structure_list(self):
-        """
-        For each vertex, record propagator flavor tags on incoming and outgoing edges.
-
-        ``diagram.adjacency_matrix[i][j]`` is the propagator from vertex ``i`` to ``j``.
-        If it is a scalar (meson-meson), it is a single propagator index.
-        If it is a 2D structure, ``[k][l]`` is the propagator from quark ``k`` at vertex ``i``
-        to quark ``l`` at vertex ``j``.
-
-        Returns:
-            List of dicts, same length as ``vertex_list``. Each dict has keys:
-            ``"in"``, ``"out"`` (lists of propagator tags, str or None),
-            ``"in(0,1,2)"``, ``"out(0,1,2)"`` (each a length-3 list of lists of tags for
-            quark legs; unused entries stay empty lists).
-        """
-        am = self.diagram.adjacency_matrix
-        n = len(self.vertex_list)
-
-        def prop_tag(idx: int):
-            if idx <= 0 or idx >= len(self.propagator_list):
-                return None
-            return self.propagator_list[idx]
-
-        def iter_entries(cell):
-            """Yield (prop_idx, k_src_quark, k_snk_quark) for one matrix cell."""
-            if isinstance(cell, (int, np.integer)):
-                v = int(cell)
-                if v != 0:
-                    yield v, None, None
-                return
-            arr = np.asarray(cell)
-            if arr.ndim == 0:
-                v = int(arr)
-                if v != 0:
-                    yield v, None, None
-                return
-            if arr.ndim == 1:
-                for k, val in enumerate(arr.flat):
-                    v = int(val)
-                    if v != 0:
-                        yield v, int(k), None
-                return
-            if arr.ndim == 2:
-                for kr in range(arr.shape[0]):
-                    for kc in range(arr.shape[1]):
-                        v = int(arr[kr, kc])
-                        if v != 0:
-                            yield v, kr, kc
-                return
-            for idx, val in np.ndenumerate(arr):
-                v = int(val)
-                if v != 0:
-                    if len(idx) >= 2:
-                        yield v, int(idx[0]), int(idx[1])
-                    elif len(idx) == 1:
-                        yield v, int(idx[0]), None
-                    else:
-                        yield v, None, None
-
-        result = []
-        for _ in range(n):
-            result.append({})
-
-        for i in range(n):
-            for j in range(n):
-                cell = am[i][j]
-                for prop_idx, k_src, k_snk in iter_entries(cell):
-                    tag = prop_tag(prop_idx)
-                    result[i]["out"] = tag
-                    result[j]["in"] = tag
-                    if k_src is not None:
-                        if result[i]["out"] is None:
-                            result[i]["out"] = [None, None, None]
-                        result[i]["out"][k_src] = tag
-                    if k_snk is not None:
-                        if result[j]["in"] is None:
-                            result[j]["in"] = [None, None, None]
-                        result[j]["in"][k_snk] = tag
-        self.flavor_structure_list = result
-        return result
-
 
 def diagram_vertice_replace(
     expr: Union[Expr, List, Any], indice_map: Dict
@@ -4449,7 +4242,7 @@ def diagram_simplify(expr: Union[Expr, List, Any]) -> Union[Expr, List, Any]:
 
         except Exception as e:
             # If an exception occurs, return original expression and print error
-            print(f"Warning: Simplification of Diagram failed: {e}")
+            logger.debug(f"Warning: Simplification of Diagram failed: {e}")
             import traceback
 
             traceback.print_exc()
@@ -4732,7 +4525,7 @@ def _collect_diagrams(expr, diagram_list, save_dir, backend):
             base = collect_diagrams(e.base)
             exp = collect_diagrams(e.exp)
             return Pow(base, exp)
-        elif isinstance(e, np.ndarray):
+        elif hasattr(e, "__array__") and hasattr(e, "shape"):  # Process numpy array
             result = np.zeros_like(e, dtype=object)
             for index in np.ndindex(e.shape):
                 result[index] = collect_diagrams(e[index])
@@ -4748,48 +4541,35 @@ def _collect_diagrams(expr, diagram_list, save_dir, backend):
     return collect_diagrams(expr)
 
 
-def _build_combined(diagram_list, vertex_map, propagator_map, debug):
+def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None):
     """Build combined_diagrams, all_vertices, all_propagators, all_times (without time_map)."""
-
-    def _map_prop_cell(value, pmap):
-        if isinstance(value, (int, np.integer)):
-            v = int(value)
-            return pmap[v] if v != 0 else 0
-        if isinstance(value, np.ndarray):
-            return _map_prop_cell(value.tolist(), pmap)
-        if isinstance(value, list):
-            return [_map_prop_cell(x, pmap) for x in value]
-        return value
-
     all_propagators = []
     all_time_vertex_pairs = []
     pair_to_index = {}
     propagator_to_index = {}
-    vertex_flavors = []
 
+    t0 = perf_counter()
     for diagram in diagram_list:
-        flavor_list = diagram.gen_flavor_structure_list()
-        if len(flavor_list) != len(diagram.vertex_list):
-            raise ValueError(
-                "gen_flavor_structure_list length must match vertex_list length"
-            )
-        for i, (vertex, time) in enumerate(zip(diagram.vertex_list, diagram.time_list)):
+        for i, (vertex, time) in enumerate(
+            zip(diagram.vertex_list, diagram.time_list)
+        ):
             pair = (time, vertex)
             if pair not in pair_to_index:
                 pair_to_index[pair] = len(all_time_vertex_pairs)
                 all_time_vertex_pairs.append(pair)
-                vertex_flavors.append(flavor_list[i])
-            else:
-                slot = pair_to_index[pair]
-                vertex_flavors[slot] = flavor_list[i]
         for p in diagram.propagator_list:
             if p not in propagator_to_index:
                 propagator_to_index[p] = len(all_propagators)
                 all_propagators.append(p)
+    if timing is not None:
+        timing["build_collect_pairs"] = perf_counter() - t0
+        timing["n_unique_time_vertex_pairs"] = len(all_time_vertex_pairs)
+        timing["n_unique_propagators"] = len(all_propagators)
 
     combined_diagrams = []
     original_to_new_time_vertex = {}
     original_to_new_propagator = {}
+    t0 = perf_counter()
     for diagram in diagram_list:
         did = id(diagram)
         original_to_new_time_vertex[did] = {
@@ -4801,7 +4581,10 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug):
         original_to_new_propagator[did] = {
             i: propagator_to_index[p] for i, p in enumerate(diagram.propagator_list)
         }
+    if timing is not None:
+        timing["build_index_mapping"] = perf_counter() - t0
 
+    t0 = perf_counter()
     for diagram in diagram_list:
         did = id(diagram)
         n_vertices = len(all_time_vertex_pairs)
@@ -4815,29 +4598,38 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug):
                 if value != 0:
                     new_i = tv_map[i]
                     new_j = tv_map[j]
-                    if isinstance(value, (int, np.integer)):
-                        new_adjacency[new_i][new_j] = prop_map[int(value)]
-                    else:
-                        new_adjacency[new_i][new_j] = _map_prop_cell(value, prop_map)
+                    if isinstance(value, int):
+                        new_adjacency[new_i][new_j] = prop_map[value]
+                    elif isinstance(value, list):
+                        new_adjacency[new_i][new_j] = [
+                            (prop_map[v] if v != 0 else 0) for v in value
+                        ]
         combined_diagrams.append(QuarkDiagram(new_adjacency))
+    if timing is not None:
+        timing["build_adjacency"] = perf_counter() - t0
 
-    all_vertices = [
-        (pair[1], vertex_flavors[i]) for i, pair in enumerate(all_time_vertex_pairs)
-    ]
+    all_vertices = [pair[1] for pair in all_time_vertex_pairs]
     all_times = [pair[0] for pair in all_time_vertex_pairs]
+    irrep_vertices = list(all_vertices)
 
     if not debug:
         if vertex_map is not None:
+            t0 = perf_counter()
             for i, vertex in enumerate(all_vertices):
                 new_vertex = vertex_map(vertex)
                 if new_vertex is not None:
                     all_vertices[i] = new_vertex
+            if timing is not None:
+                timing["vertex_map_total"] = perf_counter() - t0
         if propagator_map is not None:
+            t0 = perf_counter()
             for i, propagator in enumerate(all_propagators):
                 if propagator in propagator_map:
                     all_propagators[i] = propagator_map[propagator]
+            if timing is not None:
+                timing["propagator_map_replace"] = perf_counter() - t0
 
-    return combined_diagrams, all_vertices, all_propagators, all_times
+    return combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices
 
 
 def calc_diagram_prepare(
@@ -4846,10 +4638,15 @@ def calc_diagram_prepare(
     vertex_map: Callable = None,
     save_dir=None,
     debug=False,
+    timing: Dict = None,
 ):
     """
     Prepare expression for diagram calculation. Applies collect, build, vertex_map, propagator_map.
     Use calc_diagram_eval(prepared, time_map) inside loop for time_map-varying computation.
+
+    If timing is a dict, it will be populated with per-stage elapsed seconds, e.g.:
+      collect_diagrams_1, collect_diagrams_2, build_collect_pairs, build_adjacency,
+      vertex_map_total, propagator_map_replace, n_diagrams.
     """
     from sympy import Add, Mul, Pow, Symbol
 
@@ -4859,145 +4656,114 @@ def calc_diagram_prepare(
     if expr is None:
         return None
 
+    prepare_t0 = perf_counter()
     diagram_list = []
+    t0 = perf_counter()
     expr = _collect_diagrams(expr, diagram_list, save_dir, backend)
-    # expr = _collect_diagrams(expr, diagram_list, save_dir, backend)
+    if timing is not None:
+        timing["collect_diagrams_1"] = perf_counter() - t0
+    t0 = perf_counter()
+    expr = _collect_diagrams(expr, diagram_list, save_dir, backend)
+    if timing is not None:
+        timing["collect_diagrams_2"] = perf_counter() - t0
+        timing["n_diagrams"] = len(diagram_list)
 
     if not diagram_list:
-        return _CalcDiagramPrepared(
-            expr=expr,
-            diagram_list=[],
-            combined_diagrams=[],
-            all_vertices=[],
-            all_propagators=[],
-            all_times=[],
-            save_dir=save_dir,
-            debug=debug,
-            backend=backend,
-        )
+        return _CalcDiagramPrepared(expr=expr, diagram_list=[], combined_diagrams=[], all_vertices=[], all_propagators=[], all_times=[], irrep_vertices=[], save_dir=save_dir, debug=debug, backend=backend, timing=timing)
 
-    combined_diagrams, all_vertices, all_propagators, all_times = _build_combined(
-        diagram_list, vertex_map, propagator_map, debug
+    build_timing = timing if timing is not None else None
+    combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices = _build_combined(
+        diagram_list, vertex_map, propagator_map, debug, timing=build_timing
     )
-    return _CalcDiagramPrepared(
+    t_finalize = perf_counter()
+    prepared = _CalcDiagramPrepared(
         expr=expr,
         diagram_list=diagram_list,
         combined_diagrams=combined_diagrams,
         all_vertices=all_vertices,
         all_propagators=all_propagators,
         all_times=all_times,
+        irrep_vertices=irrep_vertices,
         save_dir=save_dir,
         debug=debug,
         backend=backend,
+        timing=timing,
     )
+    if timing is not None:
+        timing["prepare_finalize"] = perf_counter() - t_finalize
+        _PREPARE_TIME_KEYS = (
+            "collect_diagrams_1",
+            "collect_diagrams_2",
+            "build_collect_pairs",
+            "build_index_mapping",
+            "build_adjacency",
+            "vertex_map_total",
+            "propagator_map_replace",
+            "prepare_finalize",
+        )
+        timed_sum = sum(timing.get(k, 0.0) for k in _PREPARE_TIME_KEYS)
+        timing["prepare_unaccounted"] = perf_counter() - prepare_t0 - timed_sum
+    return prepared
 
 
 class _CalcDiagramPrepared:
     """Holder for prepared diagram computation state."""
 
-    __slots__ = (
-        "expr",
-        "diagram_list",
-        "combined_diagrams",
-        "all_vertices",
-        "all_propagators",
-        "all_times",
-        "save_dir",
-        "debug",
-        "backend",
-    )
+    __slots__ = ("expr", "diagram_list", "combined_diagrams", "all_vertices", "all_propagators", "all_times", "irrep_vertices", "save_dir", "debug", "backend", "timing")
 
-    def __init__(
-        self,
-        expr,
-        diagram_list,
-        combined_diagrams,
-        all_vertices,
-        all_propagators,
-        all_times,
-        save_dir,
-        debug,
-        backend,
-    ):
+    def __init__(self, expr, diagram_list, combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices, save_dir, debug, backend, timing=None):
         self.expr = expr
         self.diagram_list = diagram_list
         self.combined_diagrams = combined_diagrams
         self.all_vertices = all_vertices
         self.all_propagators = all_propagators
         self.all_times = all_times
+        self.irrep_vertices = irrep_vertices
         self.save_dir = save_dir
         self.debug = debug
         self.backend = backend
+        self.timing = timing
 
-    def load(
-        self, key, usedNe: int = None, usedNp: int = None, debug_timing: bool = False
-    ):
-        """Load cfg-dependent data for prepared vertices/propagators in place.
 
-        If debug_timing is True, returns a dict with per-type wall time and slowest objects;
-        otherwise returns None.
-        """
-        loaded_objects = set()
-        if debug_timing:
-            t_wall0 = time.perf_counter()
-            by_type_s = defaultdict(float)
-            count_by_type = defaultdict(int)
-            per_object = []
-
-        for obj in self.all_vertices + self.all_propagators:
-            if id(obj) in loaded_objects:
-                continue
-
-            loaded_objects.add(id(obj))
-            if hasattr(obj, "load"):
-                obj.load(key)
-                continue
-                print(type(obj))
-                if isinstance(obj, Meson):
-                    print(obj.usedNe_l)
-                    print(obj.usedNe_r)
-                print(obj.usedNe)
-                # Object-level usedNe has higher priority than the passed usedNe.
-                # This allows per-object Ne control (e.g. Meson.usedNe preset in vertex_map).
-                obj_usedNe = getattr(obj, "usedNe", None)
-                effective_usedNe = obj_usedNe if obj_usedNe is not None else usedNe
-                # Object-level usedNp has higher priority than the passed usedNp.
-                obj_usedNp = getattr(obj, "usedNp", None)
-                effective_usedNp = obj_usedNp if obj_usedNp is not None else usedNp
-                if debug_timing:
-                    t0 = time.perf_counter()
-                loaded_ok = False
-                if effective_usedNp is not None:
-                    try:
-                        obj.load(key, effective_usedNe, effective_usedNp)
-                        loaded_ok = True
-                    except TypeError:
-                        pass
-                if not loaded_ok and effective_usedNe is not None:
-                    try:
-                        obj.load(key, effective_usedNe)
-                        loaded_ok = True
-                    except TypeError:
-                        pass
-                if not loaded_ok:
-                    obj.load(key)
-                if debug_timing:
-                    dt = time.perf_counter() - t0
-                    name = type(obj).__name__
-                    by_type_s[name] += dt
-                    count_by_type[name] += 1
-                    per_object.append((dt, name))
-
-        if debug_timing:
-            wall_s = time.perf_counter() - t_wall0
-            per_object.sort(key=lambda x: -x[0])
-            return {
-                "wall_s": wall_s,
-                "by_type_s": dict(by_type_s),
-                "count_by_type": dict(count_by_type),
-                "top_slowest": per_object[:20],
-            }
+def calc_diagram_bind(
+    prepared: "_CalcDiagramPrepared",
+    vertex_map: Callable,
+    timing: Dict = None,
+):
+    """
+    Apply cfg-dependent vertex_map (Meson.load) to prepared skeleton.
+    Call once per cfg after propagator.load and before calc_diagram_eval.
+    """
+    if prepared is None:
         return None
+
+    if not prepared.irrep_vertices:
+        return prepared
+
+    call_times = []
+    t0 = perf_counter()
+    bound_vertices = []
+    for vertex in prepared.irrep_vertices:
+        t_call = perf_counter()
+        new_vertex = vertex_map(vertex)
+        call_times.append(perf_counter() - t_call)
+        if new_vertex is None:
+            bound_vertices.append(vertex)
+        else:
+            bound_vertices.append(new_vertex)
+    t_assign = perf_counter()
+    prepared.all_vertices = bound_vertices
+    if timing is not None:
+        timing["vertex_map_total"] = perf_counter() - t0
+        timing["bind_assign"] = perf_counter() - t_assign
+        timing["n_unique_time_vertex_pairs"] = len(prepared.irrep_vertices)
+        if call_times:
+            timing["vertex_map_call_count"] = len(call_times)
+            timing["vertex_map_call_sum"] = sum(call_times)
+            timing["vertex_map_call_min"] = min(call_times)
+            timing["vertex_map_call_max"] = max(call_times)
+            timing["vertex_map_call_avg"] = sum(call_times) / len(call_times)
+    return prepared
 
 
 def calc_diagram_eval(prepared: _CalcDiagramPrepared, time_map: Dict = None):
@@ -5031,8 +4797,7 @@ def calc_diagram_eval(prepared: _CalcDiagramPrepared, time_map: Dict = None):
         )
     else:
         results = [
-            Symbol("result_{}".format(i))
-            for i in range(len(prepared.combined_diagrams))
+            Symbol("result_{}".format(i)) for i in range(len(prepared.combined_diagrams))
         ]
 
     for i, diagram in enumerate(diagram_list):
@@ -5055,11 +4820,11 @@ def _replace_diagrams(expr, diagram_list, save_dir, backend):
             elif e.value is not None:
                 return e.value
             else:
-                print("Diagram has no value_pointer")
-                print(e.diagram.adjacency_matrix)
-                print(e.vertex_list)
-                print(e.time_list)
-                print(e.propagator_list)
+                logger.debug("Diagram has no value_pointer")
+                logger.debug(e.diagram.adjacency_matrix)
+                logger.debug(e.vertex_list)
+                logger.debug(e.time_list)
+                logger.debug(e.propagator_list)
                 return 1
                 # raise ValueError("Diagram has no value_pointer")
         elif isinstance(e, list):
@@ -5088,7 +4853,7 @@ def _replace_diagrams(expr, diagram_list, save_dir, backend):
         elif isinstance(e, Pow):
             base = replace_diagrams(e.base)
             return replace_diagrams(Pow(base, e.exp))
-        elif isinstance(e, np.ndarray):
+        elif hasattr(e, "__array__") and hasattr(e, "shape"):  # Process numpy array
             result = np.zeros_like(e, dtype=object)
             for index in np.ndindex(e.shape):
                 result[index] = replace_diagrams(e[index])
@@ -5117,11 +4882,7 @@ def calc_diagram(
     For loop over time_map only, use calc_diagram_prepare + calc_diagram_eval instead.
     """
     prepared = calc_diagram_prepare(
-        expr,
-        propagator_map=propagator_map,
-        vertex_map=vertex_map,
-        save_dir=save_dir,
-        debug=debug,
+        expr, propagator_map=propagator_map, vertex_map=vertex_map, save_dir=save_dir, debug=debug
     )
     return calc_diagram_eval(prepared, time_map=time_map)
 
@@ -5210,6 +4971,7 @@ def quark_contract(expr, particles, degenerate=True):
         result_terms.append(coeff * Add(*result_list))
     # Merge results and simplify
     terms = Add.make_args(simplify(Add(*result_terms)).expand())
+
     for term in terms:
         diagram = [[0 for i in range(num_particles)] for j in range(num_particles)]
         for i in range(num_particles):

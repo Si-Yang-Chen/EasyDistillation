@@ -3,7 +3,7 @@ from typing import Dict, List
 from .gamma import (
     GammaName,
     scheme as gamma_scheme,
-    irrep as gamma_gourp,
+    group as gamma_gourp,
     parity as gamma_parity,
     charge_conjugation as gamma_charge_conjugation,
     hermiticity as gamma_hermiticity,
@@ -18,14 +18,7 @@ from .derivative import (
 )
 
 from ..symmetry import *
-from .gauge_link import (
-    gauge_transform_dict,
-    GaugeLink,
-    gauge_group,
-    gauge_parity,
-    gauge_charge_conjugate,
-    gauge_hermiticity,
-)
+from .gauge_link import gauge_transform_dict, GaugeLink,gauge_group,gauge_parity,gauge_charge_conjugate,gauge_hermiticity
 from .gamma import gamma_transform
 
 
@@ -43,10 +36,7 @@ class Row(list):
         tuples_list = []
         for i in range(0, lenth, 2):
             tuples_list.extend(
-                [
-                    (self[i], self[i + 1][j][1], self[i + 1][j][0])
-                    for j in range(len(self[i + 1]))
-                ]
+                [(self[i], self[i + 1][j][1], self[i + 1][j][0]) for j in range(len(self[i + 1]))]
             )
         merged_dict = {}
         # Merge tuples by summing values for the same key
@@ -143,12 +133,12 @@ class GaugeRepRow(Row):
         return result
 
 
+
 class InsertionRowMom:
-    def __init__(self, row, momentum, profile=None) -> None:
+    def __init__(self, row, momentum,profile=None) -> None:
         self.row = row
         self.momentum = momentum
         self.profile = profile
-
 
 class Operator:
     def __init__(
@@ -162,7 +152,7 @@ class Operator:
         ), f"Unmatched numbers of insertion rows {len(insertion_rows)} and coefficients {len(coefficients)}"
         parts = []
         for idx in range(len(insertion_rows)):
-            row, momentum, profile, coefficient = (
+            row, momentum,profile,coefficient = (
                 insertion_rows[idx].row,
                 insertion_rows[idx].momentum,
                 insertion_rows[idx].profile,
@@ -175,14 +165,7 @@ class Operator:
                     if parts[-1] == 5 or parts[-1] == 13:
                         # gamma_3gamma_1 = -gamma(5), gamma_3gamma_1gamma_4 = -gamma(13)
                         derivative_coeff *= -1
-                    elemental_part.append(
-                        [
-                            coefficient * derivative_coeff,
-                            derivative_idx,
-                            momentum,
-                            profile,
-                        ]
-                    )
+                    elemental_part.append([coefficient * derivative_coeff, derivative_idx, momentum, profile])
                 parts.append(elemental_part)
 
         self.name = name
@@ -212,37 +195,33 @@ class Operator:
         self.parts[2 * i_row + 1][i_term][1] = deriv_idx
 
 
-# class OperatorDisplacement(Operator):
-#     def __init__(
-#         self,
-#         name: str,
-#         insertion_rows: List[InsertionRowMom],
-#         coefficients: List[float],
-#         distances: List[int],
-#     ) -> None:
-#         assert len(insertion_rows) == len(distances)
-#         super().__init__(name, insertion_rows, coefficients)
-#         for irow in range(len(self.parts) // 2):
-#             for iterm, term in enumerate(self.parts[2 * irow + 1]):
-#                 coeff, derivative_idx, momentum = term
-#                 assert (
-#                     derivative_idx == 0
-#                 ), f"displacement operator cannot define at derivative_idx = {derivative_idx}, not 0"
-#                 self.set_derivative(i_row=irow, i_term=iterm, deriv_idx=distances[irow])
+class OperatorDisplacement(Operator):
+    def __init__(
+        self,
+        name: str,
+        insertion_rows: List[InsertionRowMom],
+        coefficients: List[float],
+        distances: List[int],
+    ) -> None:
+        assert len(insertion_rows) == len(distances)
+        super().__init__(name, insertion_rows, coefficients)
+        for irow in range(len(self.parts) // 2):
+            for iterm, term in enumerate(self.parts[2 * irow + 1]):
+                coeff, derivative_idx, momentum = term
+                assert (
+                    derivative_idx == 0
+                ), f"displacement operator cannot define at derivative_idx = {derivative_idx}, not 0"
+                self.set_derivative(i_row=irow, i_term=iterm, deriv_idx=distances[irow])
 
 
 class InsertionRow:
-    def __init__(self, row, momentum_dict, profile=None) -> None:
+    def __init__(self, row, momentum_dict,profile=None) -> None:
         self.row = row
         self.momentum_dict = momentum_dict
         self.profile = profile
 
     def __call__(self, npx, npy, npz) -> InsertionRowMom:
-        return InsertionRowMom(
-            self.row,
-            list(self.momentum_dict.values()).index(f"{npx} {npy} {npz}"),
-            self.profile,
-        )
+        return InsertionRowMom(self.row, list(self.momentum_dict.values()).index(f"{npx} {npy} {npz}"),self.profile)
 
     def __str__(self) -> str:
         from .gamma import output as gamma_str
@@ -275,9 +254,7 @@ class Insertion:
         self.gamma = gamma_scheme(gamma)
         self.derivative = derivative_scheme(derivative)
         self.parity = gamma_parity(gamma) * derivative_parity(derivative)
-        self.charge_conjugation = gamma_charge_conjugation(
-            gamma
-        ) * derivative_charge_conjugation(derivative)
+        self.charge_conjugation = gamma_charge_conjugation(gamma) * derivative_charge_conjugation(derivative)
         self.hermiticity = gamma_hermiticity(gamma) * derivative_hermiticity(derivative)
         self.projection = [gamma_gourp(gamma), derivative_gourp(derivative), projection]
         self.momentum_dict = momentum_dict
@@ -304,9 +281,7 @@ class Insertion:
     def little_group_projection(self, momentum, irrep_name, idx=0):
         if momentum == [0, 0, 0]:
             return self
-        reduction_matrix = reductionToLittleGroup(
-            momentum, self.projection[-1], self.parity, irrep_name
-        )[idx]
+        reduction_matrix = reductionToLittleGroup(momentum, self.projection[-1], self.parity, irrep_name)[idx]
         ndim_irrep = len(reduction_matrix)
         little_group_rows = []
         for i in range(ndim_irrep):
@@ -335,55 +310,23 @@ class Insertion:
             for i in range(length[projection]):
                 self.rows.append(Row([gamma[0], derivative[i]]))
         elif left == "T_1":
-            assert (
-                projection in irrep_T1[right]
-            ), f"{left} x {right} has no irrep {projection}"
+            assert projection in irrep_T1[right], f"{left} x {right} has no irrep {projection}"
             for i in range(length[projection]):
                 if right == "A_1":
                     self.rows.append(Row([gamma[i], derivative[0]]))
                 elif right == "E":
                     if projection == "T_1":
                         if i == 0:
-                            row = Row(
-                                [
-                                    gamma[0],
-                                    derivative[0],
-                                    gamma[0],
-                                    self.multiply(-1 / sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[0], derivative[0], gamma[0], self.multiply(-1/sqrt(3), derivative[1])])
                         elif i == 1:
-                            row = Row(
-                                [
-                                    gamma[1],
-                                    self.multiply(-1, derivative[0]),
-                                    gamma[1],
-                                    self.multiply(-1 / sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[1], self.multiply(-1, derivative[0]), gamma[1], self.multiply(-1/sqrt(3), derivative[1])])
                         elif i == 2:
-                            row = Row(
-                                [gamma[2], self.multiply(2 / sqrt(3), derivative[0])]
-                            )
+                            row = Row([gamma[2], self.multiply(2/sqrt(3), derivative[0])])
                     elif projection == "T_2":
                         if i == 0:
-                            row = Row(
-                                [
-                                    gamma[0],
-                                    derivative[0],
-                                    gamma[0],
-                                    self.multiply(sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[0], derivative[0], gamma[0], self.multiply(sqrt(3), derivative[1])])
                         elif i == 1:
-                            row = Row(
-                                [
-                                    gamma[1],
-                                    derivative[0],
-                                    gamma[1],
-                                    self.multiply(-sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[1], derivative[0], gamma[1], self.multiply(-sqrt(3), derivative[1])])
                         elif i == 2:
                             row = Row([gamma[2], self.multiply(-2, derivative[0])])
                     row.simplify()
@@ -402,7 +345,7 @@ class Insertion:
                         )
                     )
                 elif projection in ["E"]:
-                    if right == "T_1":
+                    if right == 'T_1':
                         if i == 0:
                             self.rows.append(
                                 Row(
@@ -419,25 +362,25 @@ class Insertion:
                                 Row(
                                     [
                                         gamma[0],
-                                        self.multiply(-1 / sqrt(3), derivative[0]),
+                                        self.multiply(-1/sqrt(3), derivative[0]),
                                         gamma[1],
-                                        self.multiply(-1 / sqrt(3), derivative[1]),
+                                        self.multiply(-1/sqrt(3), derivative[1]),
                                         gamma[2],
-                                        self.multiply(2 / sqrt(3), derivative[2]),
+                                        self.multiply(2/sqrt(3), derivative[2]),
                                     ]
                                 )
                             )
-                    elif right == "T_2":
+                    elif right == 'T_2':
                         if i == 0:
                             self.rows.append(
                                 Row(
                                     [
                                         gamma[0],
-                                        self.multiply(1 / sqrt(3), derivative[0]),
+                                        self.multiply(1/sqrt(3), derivative[0]),
                                         gamma[1],
-                                        self.multiply(1 / sqrt(3), derivative[1]),
+                                        self.multiply(1/sqrt(3), derivative[1]),
                                         gamma[2],
-                                        self.multiply(-2 / sqrt(3), derivative[2]),
+                                        self.multiply(-2/sqrt(3), derivative[2]),
                                     ]
                                 )
                             )
@@ -467,10 +410,7 @@ class Insertion:
                             )
                         )
                     else:
-                        self.rows.append(
-                            Row([gamma[j], derivative[k], gamma[k], derivative[j]])
-                        )
-
+                        self.rows.append(Row([gamma[j], derivative[k], gamma[k], derivative[j]]))
 
 class InsertionGaugeLink(Insertion):
     def __init__(
@@ -487,18 +427,10 @@ class InsertionGaugeLink(Insertion):
         self.derivative = insertion_dict[gauge_link_irrep_name][gauge_link_idx]
         self.gauge_link_irrep_name = gauge_link_irrep_name
         self.gauge_link_idx = gauge_link_idx
-        self.parity = gamma_parity(gamma) * gauge_parity(gauge_link_irrep_name)
-        self.charge_conjugation = gamma_charge_conjugation(
-            gamma
-        ) * gauge_charge_conjugate(gauge_link_irrep_name)
-        self.hermiticity = gamma_hermiticity(gamma) * gauge_hermiticity(
-            gauge_link_irrep_name
-        )
-        self.projection = [
-            gamma_gourp(gamma),
-            gauge_group(gauge_link_irrep_name),
-            projection,
-        ]
+        self.parity = gamma_parity(gamma)*gauge_parity(gauge_link_irrep_name)
+        self.charge_conjugation = gamma_charge_conjugation(gamma)*gauge_charge_conjugate(gauge_link_irrep_name)
+        self.hermiticity = gamma_hermiticity(gamma) * gauge_hermiticity(gauge_link_irrep_name)
+        self.projection = [gamma_gourp(gamma), gauge_group(gauge_link_irrep_name), projection]
         self.momentum_dict = momentum_dict
         self.rows = []
         self.little_group_irreps_dict = {}
@@ -522,55 +454,23 @@ class InsertionGaugeLink(Insertion):
             for i in range(length[projection]):
                 self.rows.append(Row([gamma[0], derivative[i]]))
         elif left == "T_1":
-            assert (
-                projection in irrep_T1[right]
-            ), f"{left} x {right} has no irrep {projection}"
+            assert projection in irrep_T1[right], f"{left} x {right} has no irrep {projection}"
             for i in range(length[projection]):
                 if right == "A_1":
                     self.rows.append(Row([gamma[i], derivative[0]]))
                 elif right == "E":
                     if projection == "T_1":
                         if i == 0:
-                            row = Row(
-                                [
-                                    gamma[0],
-                                    derivative[0],
-                                    gamma[0],
-                                    self.multiply(-1 / sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[0], derivative[0], gamma[0], self.multiply(-1/sqrt(3), derivative[1])])
                         elif i == 1:
-                            row = Row(
-                                [
-                                    gamma[1],
-                                    self.multiply(-1, derivative[0]),
-                                    gamma[1],
-                                    self.multiply(-1 / sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[1], self.multiply(-1, derivative[0]), gamma[1], self.multiply(-1/sqrt(3), derivative[1])])
                         elif i == 2:
-                            row = Row(
-                                [gamma[2], self.multiply(2 / sqrt(3), derivative[1])]
-                            )
+                            row = Row([gamma[2], self.multiply(2/sqrt(3), derivative[0])])
                     elif projection == "T_2":
                         if i == 0:
-                            row = Row(
-                                [
-                                    gamma[0],
-                                    derivative[0],
-                                    gamma[0],
-                                    self.multiply(sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[0], derivative[0], gamma[0], self.multiply(sqrt(3), derivative[1])])
                         elif i == 1:
-                            row = Row(
-                                [
-                                    gamma[1],
-                                    derivative[0],
-                                    gamma[1],
-                                    self.multiply(-sqrt(3), derivative[1]),
-                                ]
-                            )
+                            row = Row([gamma[1], derivative[0], gamma[1], self.multiply(-sqrt(3), derivative[1])])
                         elif i == 2:
                             row = Row([gamma[2], self.multiply(-2, derivative[0])])
                     row.simplify()
@@ -589,7 +489,7 @@ class InsertionGaugeLink(Insertion):
                         )
                     )
                 elif projection in ["E"]:
-                    if right == "T_1":
+                    if right == 'T_1':
                         if i == 0:
                             self.rows.append(
                                 Row(
@@ -606,25 +506,25 @@ class InsertionGaugeLink(Insertion):
                                 Row(
                                     [
                                         gamma[0],
-                                        self.multiply(-1 / sqrt(3), derivative[0]),
+                                        self.multiply(-1/sqrt(3), derivative[0]),
                                         gamma[1],
-                                        self.multiply(-1 / sqrt(3), derivative[1]),
+                                        self.multiply(-1/sqrt(3), derivative[1]),
                                         gamma[2],
-                                        self.multiply(2 / sqrt(3), derivative[2]),
+                                        self.multiply(2/sqrt(3), derivative[2]),
                                     ]
                                 )
                             )
-                    elif right == "T_2":
+                    elif right == 'T_2':
                         if i == 0:
                             self.rows.append(
                                 Row(
                                     [
                                         gamma[0],
-                                        self.multiply(1 / sqrt(3), derivative[0]),
+                                        self.multiply(1/sqrt(3), derivative[0]),
                                         gamma[1],
-                                        self.multiply(1 / sqrt(3), derivative[1]),
+                                        self.multiply(1/sqrt(3), derivative[1]),
                                         gamma[2],
-                                        self.multiply(-2 / sqrt(3), derivative[2]),
+                                        self.multiply(-2/sqrt(3), derivative[2]),
                                     ]
                                 )
                             )
@@ -654,6 +554,4 @@ class InsertionGaugeLink(Insertion):
                             )
                         )
                     else:
-                        self.rows.append(
-                            Row([gamma[j], derivative[k], gamma[k], derivative[j]])
-                        )
+                        self.rows.append(Row([gamma[j], derivative[k], gamma[k], derivative[j]]))

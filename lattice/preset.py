@@ -182,21 +182,6 @@ class EigenvectorNpy(NdarrayFile, Eigenvector):
         return super().get_file_data(f"{self.prefix}{key}{self.suffix}", self.elem)
 
 
-class EigenvectorHostmem(NdarrayFile, Eigenvector):
-    def __init__(self, host_ndarray, shape: List[int] = [70, 128, 16**3, 3], totNe: int = 70) -> None:
-        super().__init__()
-        if host_ndarray.shape != shape:
-            raise ValueError(
-                f"Please check that host_ndarray shape {host_ndarray.shape} does not match expected shape (totNe, Lt, Lz * Ly * Lx, Nc) = {shape}"
-            )
-        self.Ne = totNe
-        # Initialize data using reference, NOT memcopy of data.
-        self.data = host_ndarray
-
-    def load(self, key: str = None):
-        return self.data
-
-
 class PerambulatorBinary(BinaryFile, Perambulator):
     def __init__(
         self,

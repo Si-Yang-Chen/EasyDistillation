@@ -157,9 +157,7 @@ def set_dagger_in_list(hadron_list: List[Hadron], dagger: bool) -> List[Hadron]:
     return hadron_list_new
 
 
-def gen_correlator(
-    hadrons: List[List[Hadron]], time_slice_list=None, dagger_list: List[bool] = None
-):
+def gen_correlator(hadrons: List[List[Hadron]], time_slice_list=None, dagger_list: List[bool] = None):
     """
     Calculate correlation functions for multiple Hadron lists
 
@@ -197,9 +195,7 @@ def gen_correlator(
             Mul(*[hadron_tuple[i].irrep_row for i in range(len(hadron_tuple))]).expand()
         )
         flavor_wavefnc = convert_pow_to_mul(
-            Mul(
-                *[hadron_tuple[i].flavor_structure for i in range(len(hadron_tuple))]
-            ).expand()
+            Mul(*[hadron_tuple[i].flavor_structure for i in range(len(hadron_tuple))]).expand()
         )
         result = S(0)
         terms = Add.make_args(position_wavefnc)
@@ -220,7 +216,6 @@ def gen_correlator(
                         flavor_wavefnc, np.arange(len(insersion_list)), degenerate=True
                     )
                 )
-
                 cache[contraction_key] = term_of_result
             else:
                 term_of_result = cache[contraction_key]

@@ -1,13 +1,26 @@
 import os
 import sys
+import pytest
+
+pytestmark = pytest.mark.gpu
 
 test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(test_dir, ".."))
 from time import perf_counter
 from lattice import set_backend, get_backend
 
-set_backend("cupy")
+try:
+    set_backend("cupy")
+except Exception:
+    pytest.skip("CuPy not available", allow_module_level=True)
+
 backend = get_backend()
+
+# Ensure GPU backend is functional before running tests
+try:
+    backend.zeros((1,), "<c16")
+except Exception:
+    import pytest
+    pytest.skip("CuPy not available (CUDA driver insufficient)", allow_module_level=True)
 
 from lattice import GaugeFieldIldg, EigenvectorNpy, EigenvectorGenerator, Nc, Nd
 

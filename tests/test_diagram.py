@@ -4,14 +4,7 @@ import os
 import numpy as np
 from sympy import S, Add, Mul, Symbol, simplify
 
-# Add project root directory to Python path
-import os
-import sys
-
 from lattice.symmetry.gen_hardcoded_rep import genLittleGroupIrrep
-
-test_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(test_dir, ".."))
 
 from lattice.quark_diagram import QuarkDiagram, Diagram, diagram_simplify, remove_disconneted_diagram
 from lattice.spatial_structure import HadronIrrepRow, HadronIrrep

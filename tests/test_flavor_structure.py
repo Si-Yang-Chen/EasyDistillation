@@ -4,9 +4,6 @@ import os
 import numpy as np
 from sympy import symbols, Add, Mul, S, simplify
 
-# Add the project root to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from lattice.base_types import Tag, Flavor
 from lattice.flavor_structure import Tag, Qurak, Propagator, HadronFlavorStructure
 from lattice.quark_diagram import quark_contract, _quark_contract
