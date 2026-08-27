@@ -8,6 +8,38 @@ from ..preset import GaugeField, Eigenvector, PointSource
 import numpy as np
 
 
+def sampled_point_local_indices(point_data, point_count, latt_info):
+    """Return local checkerboard indices for sampled sink points on this rank."""
+    Lx, Ly, Lz, Lt = latt_info.size
+    gx, gy, gz, gt = latt_info.grid_coord
+    global_times = np.arange(gt * Lt, (gt + 1) * Lt, dtype=np.int64)
+    coordinates = point_data[:point_count, global_times, :]
+    if hasattr(coordinates, "get"):
+        coordinates = coordinates.get()
+    coordinates = np.asarray(coordinates)
+
+    point_indices, local_times = np.indices((point_count, Lt), dtype=np.int64)
+    x_global = coordinates[..., 0]
+    y_global = coordinates[..., 1]
+    z_global = coordinates[..., 2]
+    owned = (
+        (gx * Lx <= x_global)
+        & (x_global < (gx + 1) * Lx)
+        & (gy * Ly <= y_global)
+        & (y_global < (gy + 1) * Ly)
+        & (gz * Lz <= z_global)
+        & (z_global < (gz + 1) * Lz)
+    )
+
+    point_indices = point_indices[owned]
+    local_times = local_times[owned]
+    x_local = x_global[owned] - gx * Lx
+    y_local = y_global[owned] - gy * Ly
+    z_local = z_global[owned] - gz * Lz
+    parity = (local_times + x_local + y_local + z_local) % 2
+    return point_indices, local_times, parity, z_local, y_local, x_local // 2
+
+
 class PerambulatorGenerator:
     """
      Generate perambulators in distillation,
@@ -106,15 +138,15 @@ class PerambulatorGenerator:
                 usedNe_src = 0
             else:
                 usedNe_src = eigenvector_src.Ne
+        elif eigenvector_src is not None and eigenvector_src.Ne != usedNe_src:
+            print(
+                f"Warning: used Ne = {usedNe_src}, data maximum Ne = {eigenvector_src.Ne}"
+            )
         if usedNe_snk is None:
             if eigenvector_snk is None:
                 usedNe_snk = 0
             else:
                 usedNe_snk = eigenvector_snk.Ne
-        elif eigenvector_src.Ne != usedNe_src:
-            print(
-                f"Warning: used Ne = {usedNe_src}, data maximum Ne = {eigenvector_src.Ne}"
-            )
         self.eigenvector_src = eigenvector_src
         self.eigenvector_snk = eigenvector_snk
         self.Ne_src = usedNe_src
@@ -124,12 +156,12 @@ class PerambulatorGenerator:
             if point_src is None:
                 usedNp_src = 0
             else:
-                usedNp_src = point_src.Ne
+                usedNp_src = point_src.Np
         if usedNp_snk is None:
             if point_snk is None:
                 usedNp_snk = 0
             else:
-                usedNp_snk = point_snk.Ne
+                usedNp_snk = point_snk.Np
         self.point_src = point_src
         self.point_snk = point_snk
         self.Np_src = usedNp_src
@@ -139,6 +171,8 @@ class PerambulatorGenerator:
         self.gauge_field_smear = None
         self.gauge_field_new = None
         self.MRHS = MRHS
+        self.last_metrics = {}
+        self._point_sink_indices = None
         self.dirac = core.getDirac(
             self.latt_info,
             mass,
@@ -171,15 +205,7 @@ class PerambulatorGenerator:
             self._PSV = None
 
         if self.Np_src > 0:
-            self._SP = backend.zeros(
-                (2, Lt, Lz, Ly, Lx // 2, Ns, Ns, Nc, Nc), self.contract_prec
-            )
-            if self.Ne_snk > 0:
-                self._VSP = backend.zeros(
-                    (Lt, Ns, Ns, self.Ne_snk, self.Np_src, Nc), self.contract_prec
-                )
-            else:
-                self._VSP = None
+            self._SP = None
             if self.Np_snk > 0:
                 self._PSP = backend.zeros(
                     (Lt, Ns, Ns, self.Np_snk, Nc, self.Np_src, Nc), self.contract_prec
@@ -188,7 +214,6 @@ class PerambulatorGenerator:
                 self._PSP = None
         else:
             self._SP = None
-            self._VSP = None
             self._PSP = None
 
     def load(self, key: str):
@@ -204,6 +229,7 @@ class PerambulatorGenerator:
         self.gauge_field_smear = io.readQIOGauge(self.gauge_field.load(key).file)
         self.gauge_field_new = True
 
+        eigenvector_data = None
         if self.eigenvector_src is not None:
             eigenvector_data = self.eigenvector_src.load(key)
             eigenvector_src_data_dagger = np.zeros(
@@ -255,6 +281,14 @@ class PerambulatorGenerator:
             self.point_source_data = self.point_src.load(key)
         if self.point_snk is not None:
             self.point_sink_data = self.point_snk.load(key)
+            host_indices = sampled_point_local_indices(
+                self.point_sink_data, self.Np_snk, self.latt_info
+            )
+            self._point_sink_indices = tuple(
+                backend.asarray(index) for index in host_indices
+            )
+        else:
+            self._point_sink_indices = None
         # set eigenvector_data_cb2 on device mem
         if self.eigenvector_src is not None:
             self._eigenvector_data_dagger = backend.asarray(
@@ -350,8 +384,7 @@ class PerambulatorGenerator:
 
         SV = self._SV
         VSV = self._VSV
-        if self.Np_snk > 0:
-            PSV = self._PSV
+        PSV = self._PSV if self.Np_snk > 0 else None
 
         from time import perf_counter
 
@@ -437,7 +470,7 @@ class PerambulatorGenerator:
 
         return VSV, PSV
 
-    def calc_new(self, t_src: int):
+    def calc_new(self, t_src: int, products=("VSV", "PSV")):
         """
         Vectorized method for perambulator calculation（生产环境推荐）。
 
@@ -465,14 +498,8 @@ class PerambulatorGenerator:
             Shape: (Lt, Ns, Ns, Np_snk, Nc, Ne_src)
             Dtype: complex128
 
-
-        VSP : cp.ndarray (optional)
-            Eigenvector-to-point propagators (math: S_{i,xa}); not used in PSV extraction path
-
-        PSP : cp.ndarray (optional)
-            Point-to-point propagators (math: S_{xa,yb}), if Np_src > 0 and Np_snk > 0
-            Shape: (Lt, Ns, Ns, Np_snk, Nc, Np_src, Nc)
-            Dtype: complex128
+        Point-source PSP propagation is calculated separately by
+        :meth:`calc_point_sources`; VSP is reconstructed from PSV at contraction time.
 
         Notes
         -----
@@ -494,6 +521,15 @@ class PerambulatorGenerator:
         >>> diff_VSV = cp.linalg.norm(VSV - VSV_old)
         >>> assert diff_VSV < 1e-10, "Numerical agreement failed"
         """
+        products = frozenset(str(product).upper() for product in products)
+        unsupported = products - {"VSV", "PSV"}
+        if unsupported or not products:
+            raise ValueError(f"Unsupported eigen products: {sorted(unsupported)}")
+        if "VSV" in products and self._VSV is None:
+            raise ValueError("VSV requested without an eigenvector sink")
+        if "PSV" in products and self._PSV is None:
+            raise ValueError("PSV requested without a point sink")
+
         import cupy as cp
 
         backend = get_backend()
@@ -519,12 +555,13 @@ class PerambulatorGenerator:
         SV = self._SV
         VSV = self._VSV
         PSV = self._PSV
-        SP = self._SP
-        VSP = self._VSP
-        PSP = self._PSP
-
         from time import perf_counter
 
+        total_started = perf_counter()
+        inversion_seconds = 0.0
+        vsv_seconds = 0.0
+        psv_seconds = 0.0
+        peak_device_used_bytes = 0
         for eigen in range(Ne_src):
             cp.cuda.runtime.deviceSynchronize()
             s = perf_counter()
@@ -557,299 +594,162 @@ class PerambulatorGenerator:
                     )  # .get()
             cp.cuda.runtime.deviceSynchronize()
             invert_time = perf_counter() - s
+            inversion_seconds += invert_time
 
             cp.cuda.runtime.deviceSynchronize()
             s = perf_counter()
             SV_array = backend.asarray(SV)  # Extract array conversion outside loops
-            VSV[:, :, :, :, eigen] = contract(
-                "ketzyxa,etzyxija->tijk",
-                backend.asarray(eigenvector_sink_dagger),
-                SV_array,
-                optimize=True,
-            )
-            cp.cuda.runtime.deviceSynchronize()
-            contraction_time_VSV = perf_counter() - s
-            # Use broadcasting to eliminate t_snk loop
-            if self.Np_snk > 0:
-                # Vectorized approach: process all valid points at once
-                import numpy as np
-
-                # Create all possible (t_snk, point_snk_idx) combinations
-                # Generate valid time indices for current GPU
-                valid_t_indices = np.arange(gt * Lt, (gt + 1) * Lt)
-                point_indices = np.arange(self.Np_snk)
-
-                if len(valid_t_indices) > 0:
-                    # Get all coordinates for valid time slices
-                    # Shape: (Np_snk, valid_t_count) for each coordinate
-                    x_coords = self.point_sink_data[
-                        :, valid_t_indices, 0
-                    ]  # shape: (Np_snk, valid_t_count)
-                    y_coords = self.point_sink_data[
-                        :, valid_t_indices, 1
-                    ]  # shape: (Np_snk, valid_t_count)
-                    z_coords = self.point_sink_data[
-                        :, valid_t_indices, 2
-                    ]  # shape: (Np_snk, valid_t_count)
-
-                    # ========================================================
-                    # PHASE 2: Vectorized Boolean Masking
-                    # ========================================================
-                    # Create spatial region masks (vectorized comparisons)
-                    # Each GPU handles a sub-region defined by MPI grid coordinates:
-                    # - gx: X-region in GPU grid [gx*Lx/2, (gx+1)*Lx/2)
-                    # - gy: Y-region in GPU grid [gy*Ly, (gy+1)*Ly)
-                    # - gz: Z-region in GPU grid [gz*Lz, (gz+1)*Lz)
-                    # - gt: T-region in GPU grid [gt*Lt, (gt+1)*Lt)
-
-                    valid_x_mask = (gx * (Lx // 2) <= x_coords) & (
-                        x_coords < (gx + 1) * (Lx // 2)
-                    )
-                    valid_y_mask = (gy * Ly <= y_coords) & (y_coords < (gy + 1) * Ly)
-                    valid_z_mask = (gz * Lz <= z_coords) & (z_coords < (gz + 1) * Lz)
-
-                    # Combined mask: point is valid iff in all three spatial regions
-                    # Result: Boolean array (Np_snk, valid_t_count)
-                    # No GPU synchronization - vectorized GPU operations only
-                    valid_point_mask = valid_x_mask & valid_y_mask & valid_z_mask
-
-                    # Get indices of valid points
-                    # np.where returns (indices_axis0, indices_axis1) for 2D array
-                    valid_point_indices = np.where(valid_point_mask)
-                    valid_point_snk_idx = (
-                        valid_point_indices[0].get()
-                        if hasattr(valid_point_indices[0], "get")
-                        else valid_point_indices[0]
-                    )  # Convert to NumPy
-                    valid_t_snk_idx = (
-                        valid_point_indices[1].get()
-                        if hasattr(valid_point_indices[1], "get")
-                        else valid_point_indices[1]
-                    )  # Convert to NumPy
-
-                    if len(valid_point_snk_idx) > 0:
-                        # ====================================================
-                        # PHASE 3: Batched Point Extraction
-                        # ====================================================
-                        # Get corresponding coordinates for valid points
-                        valid_x = (
-                            x_coords[valid_point_mask].get()
-                            if hasattr(x_coords, "get")
-                            else x_coords[valid_point_mask]
-                        )  # Convert to NumPy
-                        valid_y = (
-                            y_coords[valid_point_mask].get()
-                            if hasattr(y_coords, "get")
-                            else y_coords[valid_point_mask]
-                        )  # Convert to NumPy
-                        valid_z = (
-                            z_coords[valid_point_mask].get()
-                            if hasattr(z_coords, "get")
-                            else z_coords[valid_point_mask]
-                        )  # Convert to NumPy
-                        valid_t = valid_t_indices[
-                            valid_t_snk_idx
-                        ]  # Both are NumPy arrays
-
-                        # Calculate checkerboard indices for SV_array indexing
-                        # SV_array layout (GPU checkerboard format):
-                        #   Shape: (2, Lt, Lz, Ly, Lx//2, Ns, Nc)
-                        #   Index: (parity, t, z, y, x_half, spin, color)
-                        #
-                        # Parity computation: (t + x + y + z) % 2
-                        # This alternating pattern allows better memory coalescing on GPU
-                        cb_indices = (valid_t + valid_x + valid_y + valid_z) % 2
-                        x_half_indices = (
-                            valid_x // 2
-                        )  # X coordinate is halved in checkerboard format
-
-                        # Extract SV values for all valid points at once
-                        # This is the CRITICAL optimization: SINGLE GPU read for all points
-                        # instead of Np_snk × Lt individual reads in calc_old
-                        point_coords = (
-                            cb_indices,
-                            valid_t,
-                            valid_z,
-                            valid_y,
-                            x_half_indices,
-                        )
-                        PSV_values = SV_array[
-                            point_coords
-                        ]  # shape: (n_valid_points, Ns, Ns, Nc)
-                        # GPU-CPU Sync happens HERE (line 755 approximately)
-
-                        # Handle variable number of points per GPU
-                        # Each GPU processes only the points that belong to its spatial region
-                        n_valid_points = len(valid_point_snk_idx)
-
-                        if n_valid_points > 0:
-                            # Direct assignment to PSV array using global point indices
-                            # PSV array shape: (Lt, Ns, Ns, Np_snk, Nc, Ne_src)
-                            PSV[valid_t % Lt, :, :, valid_point_snk_idx, :, eigen] = (
-                                PSV_values
-                            )
-
-                            # Optional: Add debug information
-                            print(
-                                f"GPU {gt}: processed {n_valid_points} points at time slices {valid_t_indices}"
-                            )
-                        else:
-                            print(f"GPU {gt}: no valid PSV points to process")
-            cp.cuda.runtime.deviceSynchronize()
-            contraction_time_PSV = perf_counter() - s
+            contraction_time_VSV = 0.0
+            if "VSV" in products:
+                VSV[:, :, :, :, eigen] = contract(
+                    "ketzyxa,etzyxija->tijk",
+                    backend.asarray(eigenvector_sink_dagger),
+                    SV_array,
+                    optimize=True,
+                )
+                cp.cuda.runtime.deviceSynchronize()
+                contraction_time_VSV = perf_counter() - s
+                vsv_seconds += contraction_time_VSV
+            psv_started = perf_counter()
+            contraction_time_PSV = 0.0
+            if "PSV" in products:
+                point_indices, local_times, parity, z_local, y_local, x_half = (
+                    self._point_sink_indices
+                )
+                PSV[
+                    local_times,
+                    :,
+                    :,
+                    point_indices,
+                    :,
+                    eigen,
+                ] = SV_array[
+                    parity,
+                    local_times,
+                    z_local,
+                    y_local,
+                    x_half,
+                ]
+                cp.cuda.runtime.deviceSynchronize()
+                contraction_time_PSV = perf_counter() - psv_started
+                psv_seconds += contraction_time_PSV
 
             # print for check device mem
             free, total = cp.cuda.runtime.memGetInfo()
+            peak_device_used_bytes = max(peak_device_used_bytes, int(total - free))
             print(
                 f"Ne = {eigen}:  inv t = {invert_time:.4f} sec, contraction t for VSV = {contraction_time_VSV:.4f} sec, contraction t for PSV = {contraction_time_PSV:.4f} sec, device mem: {(total - free) / 1024**3} GB, free:{free / 1024**3} GB."
             )
-        # Performance timing for point source processing
-        cp.cuda.runtime.deviceSynchronize()
-        s_point_total = perf_counter()
-
-        for point_src_idx in range(self.Np_src):
-            cp.cuda.runtime.deviceSynchronize()
-            s_point = perf_counter()
-
-            if self.MRHS:
-                mrhs = 12
-            else:
-                mrhs = 1
-            # Use pre-allocated SP memory efficiently
-            SP[:] = invert(
-                self.dirac,
-                "point",
-                list(self.point_source_data[t_src, point_src_idx]) + [t_src],
-                mrhs=mrhs,
-            ).data
-            SP_array = backend.asarray(SP)  # Extract array conversion outside loops
-
-            cp.cuda.runtime.deviceSynchronize()
-            s_vsp = perf_counter()
-            VSP[:, :, :, :, :, point_src_idx] = contract(
-                "ketzyxa,etzyxijab->tijkb",
-                backend.asarray(eigenvector_sink_dagger),
-                SP_array,
-                optimize=True,
-            )
-            cp.cuda.runtime.deviceSynchronize()
-            contraction_time_VSP = perf_counter() - s_vsp
-
-            # Process PSP calculation (similar to PSV but for point sources)
-            if self.Np_snk > 0:
-                cp.cuda.runtime.deviceSynchronize()
-                s_psp = perf_counter()
-                import numpy as np
-
-                # Create all possible (t_snk, point_snk_idx) combinations
-                # Generate valid time indices for current GPU
-                valid_t_indices = np.arange(gt * Lt, (gt + 1) * Lt)
-                point_indices = np.arange(self.Np_snk)
-
-                if len(valid_t_indices) > 0:
-                    # Get all coordinates for valid time slices
-                    x_coords = self.point_sink_data[
-                        :, valid_t_indices, 0
-                    ]  # shape: (Np_snk, valid_t_count)
-                    y_coords = self.point_sink_data[
-                        :, valid_t_indices, 1
-                    ]  # shape: (Np_snk, valid_t_count)
-                    z_coords = self.point_sink_data[
-                        :, valid_t_indices, 2
-                    ]  # shape: (Np_snk, valid_t_count)
-
-                    # Create masks for spatial coordinates that belong to current GPU
-                    valid_x_mask = (gx * (Lx // 2) <= x_coords) & (
-                        x_coords < (gx + 1) * (Lx // 2)
-                    )
-                    valid_y_mask = (gy * Ly <= y_coords) & (y_coords < (gy + 1) * Ly)
-                    valid_z_mask = (gz * Lz <= z_coords) & (z_coords < (gz + 1) * Lz)
-
-                    # Combined mask for points that belong to current GPU
-                    valid_point_mask = valid_x_mask & valid_y_mask & valid_z_mask
-
-                    # Get indices of valid points
-                    valid_point_indices = np.where(valid_point_mask)
-                    valid_point_snk_idx = valid_point_indices[
-                        0
-                    ].get()  # Convert to NumPy
-                    valid_t_snk_idx = valid_point_indices[1].get()  # Convert to NumPy
-
-                    if len(valid_point_snk_idx) > 0:
-                        # Get corresponding coordinates
-                        valid_x = x_coords[valid_point_mask].get()  # Convert to NumPy
-                        valid_y = y_coords[valid_point_mask].get()  # Convert to NumPy
-                        valid_z = z_coords[valid_point_mask].get()  # Convert to NumPy
-                        valid_t = valid_t_indices[
-                            valid_t_snk_idx
-                        ]  # Both are NumPy arrays
-
-                        # Calculate point coordinates for SP_array indexing
-                        cb_indices = (valid_t + valid_x + valid_y + valid_z) % 2
-                        x_half_indices = valid_x // 2
-
-                        # Extract SP values for all valid points at once
-                        point_coords = (
-                            cb_indices,
-                            valid_t,
-                            valid_z,
-                            valid_y,
-                            x_half_indices,
-                        )
-                        PSP_values = SP_array[
-                            point_coords
-                        ]  # shape: (n_valid_points, Ns, Ns, Nc)
-
-                        # Handle variable number of points per GPU
-                        # Each GPU processes only the points that belong to its spatial region
-                        n_valid_points = len(valid_point_snk_idx)
-
-                        if n_valid_points > 0:
-                            # Direct assignment to PSP array using global point indices
-                            # PSP array shape: (Lt, Ns, Ns, Np_snk, Nc, Np_src, Nc)
-                            PSP[
-                                valid_t % Lt,
-                                :,
-                                :,
-                                valid_point_snk_idx,
-                                :,
-                                point_src_idx,
-                                :,
-                            ] = PSP_values
-
-                            # Optional: Add debug information
-                            print(
-                                f"GPU {gt}: processed {n_valid_points} PSP points for source {point_src_idx} at time slices {valid_t_indices}"
-                            )
-                        else:
-                            print(
-                                f"GPU {gt}: no PSP points to process for source {point_src_idx}"
-                            )
-
-                cp.cuda.runtime.deviceSynchronize()
-                contraction_time_PSP = perf_counter() - s_psp
-            else:
-                contraction_time_PSP = 0.0
-
-            cp.cuda.runtime.deviceSynchronize()
-            point_time = perf_counter() - s_point
-
-            # Performance report for each point source
-            free, total = cp.cuda.runtime.memGetInfo()
-            print(
-                f"Point source {point_src_idx}: inv t = {point_time:.4f} sec, VSP contraction t = {contraction_time_VSP:.4f} sec, PSP contraction t = {contraction_time_PSP:.4f} sec, device mem: {(total - free) / 1024**3} GB, free:{free / 1024**3} GB."
-            )
-
-        cp.cuda.runtime.deviceSynchronize()
-        point_total_time = perf_counter() - s_point_total
-
-        # Final performance summary
         free, total = cp.cuda.runtime.memGetInfo()
-        print(
-            f"Point source processing total time: {point_total_time:.4f} sec, device mem: {(total - free) / 1024**3} GB, free:{free / 1024**3} GB."
+        self.last_metrics = {
+            "product": "_".join(sorted(products)),
+            "source_time": int(t_src),
+            "eigenvectors": int(Ne_src),
+            "inversion_seconds": inversion_seconds,
+            "vsv_seconds": vsv_seconds,
+            "psv_seconds": psv_seconds,
+            "elapsed_seconds": perf_counter() - total_started,
+            "device_used_bytes": int(total - free),
+            "peak_device_used_bytes": peak_device_used_bytes,
+        }
+        return (VSV if "VSV" in products else None), (
+            PSV if "PSV" in products else None
         )
 
-        return VSV, PSV, VSP, PSP
+    def calc_eigen_sources(self, t_src: int, products=("VSV", "PSV")):
+        """Calculate selected VSV/PSV products without point-source inversions."""
+        return self.calc_new(t_src, products=products)
+
+    def calc_point_sources(self, t_src: int):
+        """Calculate PSP at sampled sinks for every global sink time."""
+        import cupy as cp
+        from pyquda.field import MultiLatticeFermion
+        from pyquda_utils import source
+        from time import perf_counter
+
+        if self.point_src is None or self.point_snk is None:
+            raise ValueError("point_src and point_snk are required for PSP")
+        if self._PSP is None:
+            raise ValueError("PSP buffer was not allocated")
+        if self.gauge_field_new:
+            self.dirac.loadGauge(self.gauge_field_smear)
+            self.gauge_field_new = False
+
+        backend = get_backend()
+        point_indices, local_times, parity, z_local, y_local, x_half = (
+            self._point_sink_indices
+        )
+        PSP = self._PSP
+        PSP.fill(0)
+        started = perf_counter()
+
+        inversion_seconds = 0.0
+        extraction_seconds = 0.0
+        peak_device_used_bytes = 0
+        for point_src_idx in range(self.Np_src):
+            source_coordinates = self.point_source_data[point_src_idx, t_src]
+            if hasattr(source_coordinates, "get"):
+                source_coordinates = source_coordinates.get()
+            source_position = [int(value) for value in source_coordinates] + [
+                int(t_src)
+            ]
+            rhs_count = 12 if self.MRHS else 1
+            for rhs_start in range(0, Ns * Nc, rhs_count):
+                batch_count = min(rhs_count, Ns * Nc - rhs_start)
+                rhs = MultiLatticeFermion(self.latt_info, batch_count)
+                for batch_idx in range(batch_count):
+                    spin_color = rhs_start + batch_idx
+                    rhs[batch_idx] = source.source(
+                        self.latt_info,
+                        "point",
+                        source_position,
+                        spin_color // Nc,
+                        spin_color % Nc,
+                    )
+                inversion_started = perf_counter()
+                solutions = self.dirac.invertMultiSrcRestart(rhs, 0)
+                inversion_seconds += perf_counter() - inversion_started
+                extraction_started = perf_counter()
+                for batch_idx in range(batch_count):
+                    spin_color = rhs_start + batch_idx
+                    values = backend.asarray(solutions[batch_idx].data)[
+                        parity,
+                        local_times,
+                        z_local,
+                        y_local,
+                        x_half,
+                    ]
+                    PSP[
+                        local_times,
+                        :,
+                        spin_color // Nc,
+                        point_indices,
+                        :,
+                        point_src_idx,
+                        spin_color % Nc,
+                    ] = values
+                extraction_seconds += perf_counter() - extraction_started
+            free, total = cp.cuda.runtime.memGetInfo()
+            peak_device_used_bytes = max(peak_device_used_bytes, int(total - free))
+
+        cp.cuda.runtime.deviceSynchronize()
+        free, total = cp.cuda.runtime.memGetInfo()
+        self.last_metrics = {
+            "product": "PSP",
+            "source_time": int(t_src),
+            "source_points": int(self.Np_src),
+            "inversion_seconds": inversion_seconds,
+            "extraction_seconds": extraction_seconds,
+            "elapsed_seconds": perf_counter() - started,
+            "device_used_bytes": int(total - free),
+            "peak_device_used_bytes": peak_device_used_bytes,
+        }
+        print(
+            f"PSP t_src={t_src}: sources={self.Np_src}, "
+            f"elapsed={self.last_metrics['elapsed_seconds']:.4f}s, "
+            f"device={(total - free) / 1024**3:.3f}GB"
+        )
+        return PSP
 
     def calc(self, t_src: int):
         """Main calc method that chooses between old and new versions"""

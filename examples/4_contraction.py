@@ -46,18 +46,20 @@ from lattice.insertion import (
 from lattice.insertion.mom_dict import momDict_test
 
 from lattice import (
-    GaugeFieldIldg,
+    CurrentElementalP2P,
+    CurrentElementalP2V,
+    CurrentElementalV2P,
+    CurrentElementalV2V,
     EigenvectorNpy,
+    GaugeFieldIldg,
     Nc,
     Nd,
-    PerambulatorNpy,
-    ElementalNpy,
-    PerambulatorTimeslicesNpy,
-    PropagatorPSVTimeslicesNpy,
     OverlapMatrixNpy,
-    CurrentElementalV2P,
-    CurrentElementalP2V,
-    CurrentElementalP2P,
+    PerambulatorTimeslicesNpy,
+    PointSourceNpy,
+    PropagatorPSVTimeslicesNpy,
+    get_backend,
+    set_backend,
 )
 from lattice import Dispatch
 
@@ -106,24 +108,27 @@ eigenvector = EigenvectorNpy(
     Ne,
 )
 
-elemental = ElementalNpy(
-    f"/public/home/siyangchen/qedinf/data/beta6.20_mu-0.2770_ms-0.2400_L{L}x{T}/03.elemental.ndisp1.np0.nev128/",
-    ".npy",
-    [Lt, Ne, Ne],
-    Ne,
-)
-
 # Current elemental parameters (must match 3.gen_current_elemental_all.py)
 num_nabla = 1  # Displacement degree (Ndisp)
 num_momentum = 0  # Momentum level (Nmom) - must match production script
 # Calculate num_disp from GaugeLink
 from lattice.insertion.gauge_link import GaugeLink
+from lattice.insertion.mom_dict import mom_dict_to_list
 
 num_disp = list(GaugeLink.nmax_generator(num_nabla))[-1]
+num_mom = len(mom_dict_to_list(num_momentum))
 
 # Create current elemental data loaders
+# V2V is the meson elemental — one shared loader for Meson and Current
 base_dir = f"/public/home/siyangchen/qedinf/data/beta6.20_mu-0.2770_ms-0.2400_L{L}x{T}"
 elemental_dir = f"{base_dir}/03.current_elemental_all.ndisp{num_nabla}.nmom{num_momentum}.nev{Ne}.np{Np}/"
+
+elemental = CurrentElementalV2V(
+    elemental_dir,
+    "_v2v.npy",
+    [Lt, num_disp, num_mom, Ne, Ne],
+    Ne,
+)
 
 v2p_data = CurrentElementalV2P(
     elemental_dir,

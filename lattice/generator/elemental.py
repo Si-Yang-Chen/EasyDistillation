@@ -1529,13 +1529,19 @@ class CurrentElementalGenerator:
         """
         Calculate v2p (eigenvector to point) elemental diagrams.
 
-        Physics: V(x_p - disp) U_N^†...U_2^†U_1^†(x_p - disp -> x_p)
+        Same construction as calc_all()["v2p"] (localized_blending_theory.md 4.1,
+        4.3): the bra block O_{i,xa}(d) = <xi_i|J_d|eta_{x_p},a> is built from the
+        reverse-displacement ket block
+            [U_d(x_p - disp)^dagger xi_i(x_p - disp)]^*  =  xi_i(x_p - disp)^* U_d(x_p - disp),
+        with U_d evaluated by _gauge_links_product and the path read backwards
+        (U_N^dagger ... U_1^dagger). No momentum axis: point blocks are
+        momentum-independent (implementation.md 4.2, production convention).
 
         Args:
             t: Time slice index
 
         Returns:
-            Array shape [num_disp, num_momentum, usedNe, usedNp, Nc]
+            Array shape [num_disp, usedNe, usedNp, Nc]
         """
         from ..insertion.gauge_link import GaugeLink
         from copy import deepcopy
@@ -1553,7 +1559,7 @@ class CurrentElementalGenerator:
 
         # Initialize result array
         result = backend.zeros(
-            (self.num_disp, self.num_momentum, self.usedNe, self.usedNp, Nc),
+            (self.num_disp, self.usedNe, self.usedNp, Nc),
             dtype="<c16",
         )
 
@@ -1572,6 +1578,9 @@ class CurrentElementalGenerator:
                 print(f"    displacement: {disp}")
                 print(f"    gauge_list: {gauge_list}")
 
+            # Gauge path product U_d(x) evaluated on the full volume once
+            gauge_link_product = self._gauge_links_product(gauge_list, t=t)
+
             # Apply displacement backwards: x_p -> x_p - disp
             point_shifted = deepcopy(self._point_data[: self.usedNp])
             for coord_idx in range(3):
@@ -1584,7 +1593,6 @@ class CurrentElementalGenerator:
                 print(f"    point_shifted[0, {t}, :] = {point_shifted[0, t, :]}")
 
             # Extract V from eigenvector at displaced positions
-            # V shape: [usedNe, usedNp, Nc]
             V = self._eigenvector_data[
                 t,
                 e_idx.squeeze(0),
@@ -1598,77 +1606,31 @@ class CurrentElementalGenerator:
                 print(f"    V shape: {V.shape}")
                 print(f"    V[0, 0, :] = {V[0, 0, :]}")
 
-            # Apply gauge links using internal method
-            gauge_link_product = self._apply_gauge_links_to_points(
-                point_shifted, gauge_list, t
-            )
-
-            # OLD CODE BELOW SHOULD BE DELETED - keeping temporarily for reference
-            if False:  # Disabled old loop code
-                if d < 3:  # Forward link: U_d
-                    point_shifted[:, :, d] = (point_shifted[:, :, d] + 1) % sizes[d]
-                    U_current = self._U[
-                        d,
-                        t,
-                        backend.asarray(
-                            point_shifted[p_idx.squeeze((0, 1)), t, 2], dtype=int
-                        ),
-                        backend.asarray(
-                            point_shifted[p_idx.squeeze((0, 1)), t, 1], dtype=int
-                        ),
-                        backend.asarray(
-                            point_shifted[p_idx.squeeze((0, 1)), t, 0], dtype=int
-                        ),
-                        :,
-                        :,
-                    ]  # [Np, Nc, Nc]
-
-                    if gauge_link_product is None:
-                        gauge_link_product = U_current
-                    else:
-                        gauge_link_product = contract(
-                            "pab,pbc->pac", gauge_link_product, U_current
-                        )
-
-                else:  # Backward link: U_d^†
-                    U_current = (
-                        self._U[
-                            d - 3,
-                            t,
-                            backend.asarray(
-                                point_shifted[p_idx.squeeze((0, 1)), t, 2], dtype=int
-                            ),
-                            backend.asarray(
-                                point_shifted[p_idx.squeeze((0, 1)), t, 1], dtype=int
-                            ),
-                            backend.asarray(
-                                point_shifted[p_idx.squeeze((0, 1)), t, 0], dtype=int
-                            ),
-                            :,
-                            :,
-                        ]
-                        .conj()
-                        .transpose(0, 2, 1)
-                    )  # [Np, Nc, Nc]
-
-                    if gauge_link_product is None:
-                        gauge_link_product = U_current
-                    else:
-                        gauge_link_product = contract(
-                            "pab,pbc->pac", gauge_link_product, U_current
-                        )
-
-                    point_shifted[:, :, d - 3] = (
-                        point_shifted[:, :, d - 3] - 1
-                    ) % sizes[d - 3]
-            # END of old disabled code
-
-            # Apply gauge link product to V: U^† @ V
+            # Extract gauge_link_product at point_shifted positions
             if gauge_link_product is not None:
-                V = contract("pab,epb->epa", gauge_link_product, V)
+                gauge_link_at_points = gauge_link_product[
+                    backend.asarray(
+                        point_shifted[p_idx.squeeze((0, 1)), t, 2], dtype=int
+                    ),
+                    backend.asarray(
+                        point_shifted[p_idx.squeeze((0, 1)), t, 1], dtype=int
+                    ),
+                    backend.asarray(
+                        point_shifted[p_idx.squeeze((0, 1)), t, 0], dtype=int
+                    ),
+                    :,
+                    :,
+                ]  # [usedNp, Nc, Nc]
 
-            # Store result (momentum-independent)
-            result[disp_idx] = V
+                # For v2p, we need the reverse path: U_N^dagger ... U_1^dagger
+                gauge_link_at_points = gauge_link_at_points.transpose(0, 2, 1).conj()
+
+                # Apply gauge link product to V: U^dagger @ V
+                V = contract("pab,epb->epa", gauge_link_at_points, V)
+
+            # V2P is the bra block, so take the complex conjugate after
+            # transposing the endpoint axes into [eigen, point, color].
+            result[disp_idx] = V.conj()
 
         return result
 
@@ -1676,13 +1638,17 @@ class CurrentElementalGenerator:
         """
         Calculate p2v (point to eigenvector) elemental diagrams.
 
-        Physics: U_N...U_2 U_1(x_p) V(x_p + disp)
+        Same construction as calc_all()["p2v"] (localized_blending_theory.md 4.1):
+        O_{xa,j}(d) = [U_d(x_p) xi_j(x_p + disp)]_a, with U_d evaluated by
+        _gauge_links_product at the original point positions and applied as
+        U @ V (forward path U_N ... U_1). No momentum axis: point blocks are
+        momentum-independent (implementation.md 4.2, production convention).
 
         Args:
             t: Time slice index
 
         Returns:
-            Array shape [num_disp, num_momentum, usedNp, usedNe, Nc]
+            Array shape [num_disp, usedNp, Nc, usedNe]
         """
         from ..insertion.gauge_link import GaugeLink
         from copy import deepcopy
@@ -1697,7 +1663,7 @@ class CurrentElementalGenerator:
             print(f"  self.usedNe = {self.usedNe}, self.usedNp = {self.usedNp}")
 
         result = backend.zeros(
-            (self.num_disp, self.num_momentum, self.usedNp, self.usedNe, Nc),
+            (self.num_disp, self.usedNp, Nc, self.usedNe),
             dtype="<c16",
         )
 
@@ -1713,6 +1679,9 @@ class CurrentElementalGenerator:
                 print(f"\n  Processing disp_idx {disp_idx}:")
                 print(f"    displacement: {disp}")
                 print(f"    gauge_list: {gauge_list}")
+
+            # Gauge path product U_d(x) evaluated on the full volume once
+            gauge_link_product = self._gauge_links_product(gauge_list, t=t)
 
             # Apply displacement forwards: x_p -> x_p + disp
             point_shifted = deepcopy(self._point_data[: self.usedNp])
@@ -1739,79 +1708,29 @@ class CurrentElementalGenerator:
                 print(f"    V shape: {V.shape}")
                 print(f"    V[0, 0, :] = {V[0, 0, :]}")
 
-            gauge_link_product = self._apply_gauge_links_to_points(
-                self._point_data[: self.usedNp], gauge_list, t
-            )
-
+            # Extract gauge_link_product at original point positions
             if gauge_link_product is not None:
-                gauge_link_product = gauge_link_product.transpose(0, 2, 1).conj()
+                gauge_link_at_points = gauge_link_product[
+                    backend.asarray(
+                        self._point_data[p_idx.squeeze((0, 1)), t, 2], dtype=int
+                    ),
+                    backend.asarray(
+                        self._point_data[p_idx.squeeze((0, 1)), t, 1], dtype=int
+                    ),
+                    backend.asarray(
+                        self._point_data[p_idx.squeeze((0, 1)), t, 0], dtype=int
+                    ),
+                    :,
+                    :,
+                ]  # [usedNp, Nc, Nc]
 
-            #     # Apply gauge links in REVERSE order: U_N ... U_2 U_1
-            #     gauge_link_product = None
-            #     for d in reversed(gauge_list):
-            #         if d >= 3:  # Backward link becomes forward in reverse
-            #             point_shifted[:, :, d - 3] = (
-            #                 point_shifted[:, :, d - 3] + 1
-            #             ) % sizes[d - 3]
-            #             U_current = self._U[
-            #                 d - 3,
-            #                 t,
-            #                 backend.asarray(
-            #                     point_shifted[p_idx.squeeze((0, 1)), t, 2], dtype=int
-            #                 ),
-            #                 backend.asarray(
-            #                     point_shifted[p_idx.squeeze((0, 1)), t, 1], dtype=int
-            #                 ),
-            #                 backend.asarray(
-            #                     point_shifted[p_idx.squeeze((0, 1)), t, 0], dtype=int
-            #                 ),
-            #                 :,
-            #                 :,
-            #             ]
-
-            #             if gauge_link_product is None:
-            #                 gauge_link_product = U_current
-            #             else:
-            #                 gauge_link_product = contract(
-            #                     "pab,pbc->pac", gauge_link_product, U_current
-            #                 )
-
-            #         else:  # Forward link becomes backward in reverse
-            #             U_current = (
-            #                 self._U[
-            #                     d,
-            #                     t,
-            #                     backend.asarray(
-            #                         point_shifted[p_idx.squeeze((0, 1)), t, 2], dtype=int
-            #                     ),
-            #                     backend.asarray(
-            #                         point_shifted[p_idx.squeeze((0, 1)), t, 1], dtype=int
-            #                     ),
-            #                     backend.asarray(
-            #                         point_shifted[p_idx.squeeze((0, 1)), t, 0], dtype=int
-            #                     ),
-            #                     :,
-            #                     :,
-            #                 ]
-            #                 .conj()
-            #                 .transpose(0, 2, 1)
-            #             )
-
-            #             if gauge_link_product is None:
-            #                 gauge_link_product = U_current
-            #             else:
-            #                 gauge_link_product = contract(
-            #                     "pab,pbc->pac", gauge_link_product, U_current
-            #                 )
-
-            #             point_shifted[:, :, d] = (point_shifted[:, :, d] - 1) % sizes[d]
-
-            # Apply gauge link product to V
-            if gauge_link_product is not None:
-                V = contract("pab,epb->pea", gauge_link_product, V)
-
-            # Store result (momentum-independent)
-            result[disp_idx] = V
+                # For p2v, we need forward path: U_N...U_2 U_1, applied as U @ V
+                result[disp_idx] = contract(
+                    "pab,epb->pae", gauge_link_at_points, V
+                )
+            else:
+                # Transpose V from [usedNe, usedNp, Nc] to [usedNp, Nc, usedNe]
+                result[disp_idx] = V.transpose(1, 2, 0)
 
         return result
 
@@ -1947,9 +1866,15 @@ class CurrentElementalGenerator:
                     else backend.eye(Nc)
                 )
 
-            # Convert to arrays
-            indices = backend.asarray(indices_list, dtype="int32")  # [N, 2]
-            values = backend.asarray(values_list, dtype="<c16")  # [N, 3, 3]
+            # Convert to arrays.  Empty pair sets must still expose the
+            # documented sparse shapes (K,2) and (K,Nc,Nc) with K=0
+            # (implementation.md 4.4), matching calc_all().
+            if len(indices_list) == 0:
+                indices = backend.zeros((0, 2), dtype="int32")
+                values = backend.zeros((0, Nc, Nc), dtype="<c16")
+            else:
+                indices = backend.asarray(indices_list, dtype="int32")  # [N, 2]
+                values = backend.asarray(values_list, dtype="<c16")  # [N, 3, 3]
 
             # Store result (momentum-independent)
             result.append(
@@ -2226,7 +2151,10 @@ class CurrentElementalGenerator:
             else:
                 result = V_at_points
 
-            result_v2p[disp_idx] = result
+            # V2P is the bra block.  The reverse-displacement construction
+            # has the same endpoint layout as P2V after transpose, so its
+            # complex conjugate supplies the bra matrix element.
+            result_v2p[disp_idx] = result.conj()
 
             # === Compute p2v ===
             # Apply displacement forwards: x_p -> x_p + disp
