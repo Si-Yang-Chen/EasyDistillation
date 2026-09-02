@@ -46,7 +46,8 @@ def _identity(value: dict[str, Any]) -> str:
 
 def _git(root: Path, *arguments: str, required: bool = True) -> str | None:
     completed = subprocess.run(
-        ["git", "-C", str(root), *arguments],
+        ["git", *arguments],
+        cwd=str(root),
         text=True,
         capture_output=True,
         check=False,
@@ -69,7 +70,8 @@ def _git_commit(root: Path, ref: str, name: str) -> str:
 
 def _is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
     completed = subprocess.run(
-        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor, descendant],
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=str(root),
         text=True,
         capture_output=True,
         check=False,
@@ -131,7 +133,8 @@ def _git_state(root: Path, relative: str) -> str:
 
 def _is_ignored(root: Path, relative: str) -> bool:
     completed = subprocess.run(
-        ["git", "-C", str(root), "check-ignore", "--quiet", "--", relative],
+        ["git", "check-ignore", "--quiet", "--", relative],
+        cwd=str(root),
         text=True,
         capture_output=True,
         check=False,
