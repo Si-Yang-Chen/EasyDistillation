@@ -91,6 +91,7 @@ pair-smoke CLI 已实现并通过合成 subprocess tests；真实 Kunshan smoke 
 | `docs/current-api.md` | Current API 和公式契约 |
 | `docs/temporal-gauge-link-elementals.md` | directed raw basis 与 temporal link实现 |
 | `docs/kunshan-current-vsv-smoke.md` | cfg10000 真实单流 smoke evidence |
+| `docs/kunshan-current-vsv-pair-smoke.md` | cfg10000 真实双流（J4×J4）smoke evidence 与 deployment identity |
 | `docs/kunshan-easydistillation-data-map.md` | Kunshan 数据路径、shape、axis 和兼容性 |
 | `docs/kunshan-current-measurement-readiness.md` | charge/H–J–H readiness v4 |
 | `docs/conserved-current-measurement-decisions.md` | 物理授权 checklist |

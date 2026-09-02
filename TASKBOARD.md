@@ -2,7 +2,7 @@
 
 - project_id: `lattice-flow-restart`
 - display_name: `EasyDistillation Wilson conserved-current / Current×Current`
-- updated_at: `2026-09-03T03:40:00+08:00`
+- updated_at: `2026-09-03T06:45:00+08:00`
 - current_task: `workspace 可移交快照已整理；永久 release 等待用户授权 commit/push 和 retention 决策`
 - next_action: `用户处理永久化门禁时，工程主线恢复 pair-smoke CLI；每次交付文件变化后重建 manifest`
 - blockers: `workspace 文档可移交无工程 blocker；永久 release 被未授权 commit/push 与 pending retention hard gate 阻止；H–J–H 另有物理合同 blocker`
@@ -16,7 +16,7 @@
 | ART-01 | done | directed-current content-addressed artifact persistence 与 source hashes | `lattice/current_elemental.py`; persistence tests | 永久化到 Git commit |
 | CON-01 | done | 单 current point-split term-wise existing-VSV contraction | cfg10000 canonical v3 smoke | 保留 canonical evidence |
 | CON-02 | done | 双 current temporal V2V term-pair kernel 与 pair-smoke CLI | kernel focused `6 passed`; pair CLI subprocess tests passed | cfg10000 real pair smoke (KUN-01) |
-| KUN-01 | pending | cfg10000 `Ne=1` real `J4×J4` pair smoke | 可复用 artifact/VSV/record 已定位 | dry-run 后发布新结果目录 |
+| KUN-01 | done | cfg10000 `Ne=1` real `J4×J4` pair smoke | result `a1cb967c…cf21d`; manifest identity `3be081ae…4fbc`; `docs/kunshan-current-vsv-pair-smoke.md` | 保持 canonical；后续 ensemble 另立 PROD-01 |
 | INT-01 | pending | 与 localized-blending 共享模块兼容集成 | branch `192ee700372e2a34a5a6848e3655ea5caa1d7bdc` 修改共享代码 | 三方 diff、保留双方语义、跑兼容测试 |
 | PROD-01 | pending | 8-cfg Wilson `J4×J4` input/result/resource contract | VSV/PSV/PSP/overlap inputs 完整 | endpoint coverage 与成本评估，用户确认资源 |
 | PROD-02 | pending | 8-cfg Slurm production、monitor 和结果审计 | 尚无新 jobs | 每 attempt 新目录；原子 result + DONE |
@@ -30,6 +30,7 @@
 - pair kernel focused tests: `6 passed`；
 - pre-pair full related suite: `166 passed, 1 skipped`；加入 pair kernel 后尚待重跑；
 - cfg10000 single-current real artifact smoke: passed；
+- cfg10000 real dual-current pair smoke: passed（result `a1cb967c…`, manifest identity `3be081ae…`, login-readonly record `7d422baf…`）；
 - readiness v4: `files_verified=true`, `ready=false`；
 - handover manifest + persistent monitor focused tests: `19 passed`；manifest 子集 `14 passed`，覆盖 approved restore evidence、not-required single-copy 决策、ignored/directory/local-branch 拒绝和 bare-remote/fresh-clone release 模拟；
 - staging/commit/push: not performed；reviewer 的永久交付 verdict 因此仍为 BLOCKED；

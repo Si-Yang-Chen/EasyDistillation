@@ -101,7 +101,7 @@ ownership 见 `docs/ledger/decisions.md`：
 | --- | --- | --- |
 | Current API 与 directed raw | 已实现 | 本地测试；八方向、term schema、端点和边界契约 |
 | 单 current VSV bridge | 已实现并真实 smoke | cfg10000 canonical v3 evidence |
-| 双 current V2V kernel | 本地聚焦通过 | `6 passed`；尚未完整套件/CLI/真实 smoke |
+| 双 current V2V kernel | 已实现并真实 smoke | pair kernel focused `6 passed`; pair CLI subprocess tests passed; cfg10000 real pair smoke passed |
 | 8-cfg raw input readiness | 输入完整 | VSV/PSV/PSP/overlap 精确计数；operator compatibility 分开判断 |
 | Wilson `J4×J4` ensemble | 未生成 | 需 pair CLI、真实 smoke、production contract 和 Slurm jobs |
 | H–J–H charge/WT | intentionally not ready | 缺批准物理合同与 C3 |
@@ -113,7 +113,7 @@ ownership 见 `docs/ledger/decisions.md`：
 
 1. ~~完成 strict pair-smoke CLI 和 subprocess tests~~（已完成）；
 2. 跑完整相关 pytest、Ruff、format 和 diff checks，并完成本地分组 commit；
-3. 以 cfg10000 `Ne=1` existing VSV + directed-current artifact 做真实双 `J4` smoke；
+3. ~~以 cfg10000 `Ne=1` existing VSV + directed-current artifact 做真实双 `J4` smoke~~（已通过，见 `docs/kunshan-current-vsv-pair-smoke.md`）；
 4. 审计 full-size `J4×J4` 所需 endpoint/source coverage，禁止仅凭 18-source VSV shape 假设完整；
 5. 与 localized-blending 共享代码做兼容合并，建立新的隔离 Kunshan snapshot；
 6. 准备 8-cfg production input manifest、资源估算、result contract、Slurm ledger 和 monitor；
