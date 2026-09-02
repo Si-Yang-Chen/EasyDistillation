@@ -351,7 +351,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 _fail("restore-check evidence hash changed during manifest build")
 
-    branch = _git(root, "branch", "--show-current") or None
+    abbreviated = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    branch = None if abbreviated in {None, "", "HEAD"} else abbreviated
     origin = _git(root, "remote", "get-url", "origin", required=False)
     status = _git(root, "status", "--porcelain", "--untracked-files=all")
     head = _git(root, "rev-parse", "HEAD")

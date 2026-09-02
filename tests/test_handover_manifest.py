@@ -452,6 +452,20 @@ def test_not_required_retention_rejects_fake_restore_evidence(tmp_path):
     assert "must not declare restore_check" in completed.stderr
 
 
+def test_build_records_branch_and_detached_head(tmp_path):
+    root = _repo(tmp_path)
+    output = (root / "docs" / "handover-manifest.json").resolve()
+    assert _build(root, output).returncode == 0
+    attached = json.loads(output.read_text(encoding="utf-8"))
+    assert attached["git"]["branch"] == "master"
+
+    assert _git(root, "checkout", "--detach", "HEAD").returncode == 0
+    detached_output = (root / "docs" / "detached.json").resolve()
+    detached = _build(root, detached_output)
+    assert detached.returncode == 0, detached.stderr
+    assert json.loads(detached_output.read_text(encoding="utf-8"))["git"]["branch"] is None
+
+
 def test_build_refuses_overwrite_and_non_root(tmp_path):
     root = _repo(tmp_path)
     output = (root / "docs" / "handover-manifest.json").resolve()
