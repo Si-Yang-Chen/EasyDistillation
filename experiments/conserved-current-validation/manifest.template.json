@@ -1,0 +1,61 @@
+{
+  "schema": "lattice.conserved-current-validation.manifest/v1",
+  "experiment_id": "REPLACE_AUDITED_EXPERIMENT_ID",
+  "dataset_label": "REPLACE_AUDITED_ENSEMBLE_LABEL",
+  "synthetic": false,
+  "temporal_extent": 64,
+  "boundary": "periodic",
+  "contact_times": [0, 32],
+  "excluded_boundary_times": [],
+  "plateau_times": [12, 13, 14, 15, 16, 17, 18, 19],
+  "ne": {
+    "source": {"used": 64, "available": 64},
+    "sink": {"used": 64, "available": 64}
+  },
+  "current_api": {
+    "version": "1.2.0",
+    "term_schema": "lattice.current.term/v1",
+    "assembler_schema": "lattice.current.assembler/v1",
+    "implementation": "lattice.insertion.current.ConservedVectorCurrent",
+    "sign_convention": "forward -1/2 (r-gamma_mu), backward +1/2 (r+gamma_mu); backward divergence J(t)-J(t-1)"
+  },
+  "expected_provenance": {
+    "code_sha256": "REPLACE_WITH_64_HEX_PRODUCER_CODE_HASH",
+    "api_sha256": "REPLACE_WITH_64_HEX_CURRENT_API_HASH",
+    "code_source_path": "/absolute/path/to/EasyDistillation/experiments/conserved-current-validation/produce_real_observables.py",
+    "api_source_path": "/absolute/path/to/EasyDistillation/lattice/insertion/current.py"
+  },
+  "source_files": [
+    {"path": "/absolute/path/to/EasyDistillation/experiments/conserved-current-validation/produce_real_observables.py", "sha256": "REPLACE_WITH_64_HEX"},
+    {"path": "/absolute/path/to/EasyDistillation/lattice/insertion/current.py", "sha256": "REPLACE_WITH_64_HEX"}
+  ],
+  "configuration_list": {
+    "path": "/absolute/path/to/audited-cfg-ids.json",
+    "sha256": "REPLACE_WITH_64_HEX"
+  },
+  "producer": {
+    "mode": "audited-contractions-v1",
+    "source_sink_current_time_semantics": "source-first",
+    "p2p_required": true,
+    "audited_contractions_path": "/absolute/path/to/audited-wt-and-charge-contractions.npz",
+    "audited_contractions_sha256": "REPLACE_WITH_64_HEX"
+  },
+  "artifacts": {
+    "gauge": {"status": "required", "pattern": "/absolute/path/to/gauge/cfg*.npy", "sha256": {"/absolute/path/to/gauge/cfg0001.npy": "REPLACE_WITH_64_HEX"}, "loader": {"format": "npy", "ndim": 4, "dtype_kind": "c", "finite": true}},
+    "eigenvector": {"status": "required", "pattern": "/absolute/path/to/eigenvectors/cfg*.npy", "sha256": {"/absolute/path/to/eigenvectors/cfg0001.npy": "REPLACE_WITH_64_HEX"}, "loader": {"format": "npy", "ndim": 4, "dtype_kind": "c", "finite": true}},
+    "vsv": {"status": "required", "pattern": "/absolute/path/to/vsv/cfg*.npy", "sha256": {"/absolute/path/to/vsv/cfg0001.npy": "REPLACE_WITH_64_HEX"}, "loader": {"format": "npy", "ndim": 5, "dtype_kind": "c", "finite": true}},
+    "psv": {"status": "required", "pattern": "/absolute/path/to/psv/cfg*.npy", "sha256": {"/absolute/path/to/psv/cfg0001.npy": "REPLACE_WITH_64_HEX"}, "loader": {"format": "npy", "ndim": 6, "dtype_kind": "c", "finite": true}},
+    "overlap": {"status": "required", "path": "/absolute/path/to/overlap.npy", "sha256": "REPLACE_WITH_64_HEX", "loader": {"format": "npy", "ndim": 3, "dtype_kind": "c", "finite": true}},
+    "current_p2v": {"status": "required", "path": "/absolute/path/to/current-p2v.npy", "sha256": "REPLACE_WITH_64_HEX", "loader": {"format": "npy", "ndim": 5, "dtype_kind": "c", "finite": true}},
+    "current_p2p": {"status": "required", "path": "/absolute/path/to/current-p2p.npz", "sha256": "REPLACE_WITH_64_HEX", "loader": {"format": "npz", "member": "elementals", "ndim": 4, "dtype_kind": "c", "finite": true}}
+  },
+  "git_head": "REPLACE_WITH_PRODUCER_GIT_HEAD",
+  "git_dirty": false,
+  "job": null,
+  "pass_gates": {
+    "minimum_configurations": 8,
+    "wt": {"absolute_tolerance": 1e-10, "relative_to_statistical_error": 3.0, "max_pull": 3.0, "p_value_min": 0.01},
+    "charge": {"absolute_tolerance": 0.01, "relative_to_statistical_error": 3.0, "max_pull": 3.0, "p_value_min": 0.01}
+  },
+  "notes": "Template only: every REPLACE value is deliberately rejected. audited-contractions-v1 packages already-contracted WT sides and Q(t); it does not derive them from raw VSV/PSV/current artifacts. P2P may be status unused only when p2p_required is false and an independently hashed attestation_path/attestation_sha256 and unused_reason are supplied."
+}

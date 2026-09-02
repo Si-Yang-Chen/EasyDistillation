@@ -1,0 +1,23 @@
+{
+  "schema": "lattice.conserved-current.measurement-inventory-source/v1",
+  "version": 1,
+  "ensemble_label": "REQUIRES_ENSEMBLE_LABEL",
+  "temporal_extent": 72,
+  "boundary": "periodic",
+  "configuration_ids": ["REQUIRES_CONFIGURATION_ID"],
+  "datasets": [
+    {
+      "id": "candidate-meson-two-point",
+      "role": "candidate-two-point",
+      "file_pattern": "/absolute/path/to/correlators/{configuration}.npy",
+      "operator_source": "REQUIRES_SOURCE_OPERATOR",
+      "operator_sink": "REQUIRES_SINK_OPERATOR",
+      "current_component": null,
+      "topology": "connected-v2v",
+      "time_axes": ["source_time", "relative_sink_time"],
+      "evidence_path": "/absolute/path/to/RUN_NOTES.txt",
+      "notes": "Candidate data are not promoted to an approved denominator by inventory alone."
+    }
+  ],
+  "notes": "Replace paths and declarations, then run build_measurement_inventory.py with --verify-finite."
+}

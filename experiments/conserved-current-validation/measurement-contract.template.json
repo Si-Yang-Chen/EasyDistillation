@@ -1,0 +1,58 @@
+{
+  "schema": "lattice.conserved-current.measurement-contract/v1",
+  "version": 1,
+  "status": "draft",
+  "observable": "connected-charge-normalization",
+  "approval": {
+    "authority": "REQUIRES_AUTHORITY",
+    "approved_at": "REQUIRES_APPROVAL_TIME",
+    "document_path": "REQUIRES_APPROVAL_DOCUMENT",
+    "document_sha256": "REQUIRES_APPROVAL_HASH"
+  },
+  "ensemble": {
+    "label": "REQUIRES_ENSEMBLE_LABEL",
+    "configuration_ids": ["REQUIRES_CONFIGURATION_ID"],
+    "minimum_configurations": 8
+  },
+  "temporal_extent": 72,
+  "boundary": "periodic",
+  "operators": {
+    "source": {
+      "name": "REQUIRES_SOURCE_OPERATOR",
+      "definition": "REQUIRES_SOURCE_DEFINITION",
+      "momentum": [0, 0, 0],
+      "projector": "REQUIRES_SOURCE_PROJECTOR"
+    },
+    "sink": {
+      "name": "REQUIRES_SINK_OPERATOR",
+      "definition": "REQUIRES_SINK_DEFINITION",
+      "momentum": [0, 0, 0],
+      "projector": "REQUIRES_SINK_PROJECTOR"
+    }
+  },
+  "current": {
+    "implementation": "lattice.insertion.current.ConservedVectorCurrent",
+    "component": 3,
+    "wilson_r": 1.0,
+    "topology": "connected-v2v",
+    "flavor_weights": {}
+  },
+  "formulas": {
+    "c2": "REQUIRES_C2_FORMULA",
+    "c3": "REQUIRES_C3_FORMULA",
+    "ratio": "REQUIRES_RATIO_FORMULA",
+    "wt_lhs": "unused",
+    "wt_rhs": "unused",
+    "contact_term": "unused"
+  },
+  "time_policy": {
+    "source_times": [],
+    "sink_times": [],
+    "current_times": [],
+    "contact_times": [],
+    "excluded_boundary_times": [],
+    "plateau_times": []
+  },
+  "required_products": ["two-point-denominator", "three-point-numerator"],
+  "notes": "Template intentionally remains draft. Do not generate numerical physics until authority, projector, flavor weights, formulas, and time policy are approved."
+}

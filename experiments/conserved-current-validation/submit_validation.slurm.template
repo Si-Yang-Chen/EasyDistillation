@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# TEMPLATE ONLY. Fill placeholders after your site has approved resources.
+# This file does not submit a job and contains no site-specific path or account.
+#SBATCH --job-name=current-conservation
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --time=04:00:00
+#SBATCH --output=${RESULT_DIR}/slurm-%j.out
+#SBATCH --error=${RESULT_DIR}/slurm-%j.err
+
+set -euo pipefail
+: "${REPO_ROOT:?set the absolute checkout path}"
+: "${MANIFEST:?set the absolute real-data manifest path}"
+: "${RESULT_DIR:?set a new, nonexistent output directory}"
+
+cd "$REPO_ROOT"
+# Load site-approved modules here, if needed. Do not run expensive work on a login node.
+python experiments/conserved-current-validation/produce_real_observables.py \
+  "$MANIFEST" --result-dir "$RESULT_DIR/producer"
+python experiments/conserved-current-validation/run_real_gauge_validation.py \
+  "$MANIFEST" "$RESULT_DIR/producer/observables.npz" --result-dir "$RESULT_DIR/analysis" \
+  --require-real-gauge
