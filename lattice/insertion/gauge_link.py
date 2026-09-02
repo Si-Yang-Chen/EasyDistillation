@@ -129,6 +129,73 @@ gauge_transform_dict = {
 }
 
 
+class DirectedCurrentBasis:
+    """Stable one-link basis for raw conserved-current elementals."""
+
+    SCHEMA = "lattice.current.directed-one-link-basis/v1"
+    VERSION = 1
+    DIRECTIONS = (
+        (0, "+x", (1, 0, 0, 0), 0, False),
+        (1, "+y", (0, 1, 0, 0), 1, False),
+        (2, "+z", (0, 0, 1, 0), 2, False),
+        (3, "-x", (-1, 0, 0, 0), 0, True),
+        (4, "-y", (0, -1, 0, 0), 1, True),
+        (5, "-z", (0, 0, -1, 0), 2, True),
+        (6, "+t", (0, 0, 0, 1), 3, False),
+        (7, "-t", (0, 0, 0, -1), 3, True),
+    )
+
+    @classmethod
+    def metadata(cls):
+        return {
+            "schema": cls.SCHEMA,
+            "version": cls.VERSION,
+            "axis_order": [
+                "direction",
+                "time",
+                "z",
+                "y",
+                "x",
+                "color_row",
+                "color_column",
+            ],
+            "directions": [
+                {
+                    "index": index,
+                    "name": name,
+                    "vector": list(vector),
+                    "gauge_axis": gauge_axis,
+                    "dagger": dagger,
+                }
+                for index, name, vector, gauge_axis, dagger in cls.DIRECTIONS
+            ],
+        }
+
+    @classmethod
+    def direction(cls, index):
+        if isinstance(index, bool) or not isinstance(index, (int, np.integer)):
+            raise TypeError("current direction index must be an integer")
+        index = int(index)
+        if not 0 <= index < len(cls.DIRECTIONS):
+            raise ValueError("current direction index must be between 0 and 7")
+        return cls.DIRECTIONS[index]
+
+    @classmethod
+    def index_for_term(cls, direction, link):
+        if isinstance(direction, bool) or not isinstance(
+            direction, (int, np.integer)
+        ):
+            raise TypeError("current term direction must be an integer")
+        direction = int(direction)
+        if not 0 <= direction <= 3:
+            raise ValueError("current term direction must be between 0 and 3")
+        if link == "forward":
+            return direction if direction < 3 else 6
+        if link == "backward":
+            return direction + 3 if direction < 3 else 7
+        raise ValueError("current link must be 'forward' or 'backward'")
+
+
 class GaugeLink(Symbol):
     # 定义允许的下一个元素（差值不为3的元素）
     _VALID_NEXT = {

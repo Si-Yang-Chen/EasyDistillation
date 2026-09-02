@@ -1,5 +1,6 @@
 from copy import copy
 from math import factorial
+from numbers import Integral
 from typing import List, Tuple, Literal
 from time import perf_counter
 
@@ -13,6 +14,24 @@ from ..insertion.phase import MomentumPhase
 
 def comb(n, i):
     return factorial(n) // (factorial(i) * factorial(n - i))
+
+
+def _bounded_count(value, available, name):
+    if isinstance(available, bool) or not isinstance(available, Integral):
+        raise TypeError(f"available {name} must be an integer")
+    available = int(available)
+    if available < 0:
+        raise ValueError(f"available {name} must be non-negative")
+    if value is None:
+        return available
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be an integer")
+    value = int(value)
+    if not 0 <= value <= available:
+        raise ValueError(
+            f"{name} must satisfy 0 <= {name} <= available {name} ({available})"
+        )
+    return value
 
 
 class ElementalGenerator:
@@ -1049,24 +1068,29 @@ class CurrentElementalGenerator:
 
         Ne = eigenvector.Ne
         Np = point.Np
-        self.Ne = Ne
-        self.Np = Np
-        self.usedNe = usedNe if usedNe is not None else Ne
-        self.usedNp = usedNp if usedNp is not None else Np
+        self.Ne = int(Ne)
+        self.Np = int(Np)
+        self.usedNe = _bounded_count(usedNe, Ne, "usedNe")
+        self.usedNp = _bounded_count(usedNp, Np, "usedNp")
 
         # Data storage
         self._U = None
+        self._current_U = None
         self._eigenvector_data = None
+        self._loaded_eigenvector_count = None
         self._point_data = None
         self._gauge_field_path = None
         self._momentum_phase = MomentumPhase(latt_size)
 
     def load(self, key: str):
         """Load gauge field, eigenvector, and point data."""
-        self._U = self.gauge_field.load(key)[:].transpose(4, 0, 1, 2, 3, 5, 6)[: Nd - 1]
-        self._gauge_field_path = self.gauge_field.load(key).file
-        self._eigenvector_data = self.eigenvector.load(key)[:]
-        self._point_data = self.point.load(key)[:]
+        gauge_data = self.gauge_field.load(key)
+        self._current_U = gauge_data[:].transpose(4, 0, 1, 2, 3, 5, 6)
+        self._U = self._current_U[: Nd - 1]
+        self._gauge_field_path = gauge_data.file
+        self._eigenvector_data = self.eigenvector.load(key)[:, : self.usedNe]
+        self._loaded_eigenvector_count = self.usedNe
+        self._point_data = self.point.load(key)[: self.usedNp]
         self.gauge_field.data = None  # Free memory
 
     def clear_loaded_data(self):
@@ -1078,8 +1102,8 @@ class CurrentElementalGenerator:
 
         if backend.__name__ == "cupy":
             # For CuPy, we need to explicitly synchronize and ensure memory is freed
-            if self._U is not None:
-                del self._U
+            if self._current_U is not None:
+                del self._current_U
             if self._eigenvector_data is not None:
                 del self._eigenvector_data
             if self._point_data is not None:
@@ -1106,12 +1130,15 @@ class CurrentElementalGenerator:
 
         else:
             del self._U
+            del self._current_U
             del self._eigenvector_data
             del self._point_data
             gc.collect()
 
         self._U = None
+        self._current_U = None
         self._eigenvector_data = None
+        self._loaded_eigenvector_count = None
         self._point_data = None
         self._gauge_field_path = None
 
@@ -1130,6 +1157,8 @@ class CurrentElementalGenerator:
             U = 0.5 * (U + contract("...ab->...ba", Uinv.conj()))
             Uinv = backend.linalg.inv(U)
         self._U = U
+        if self._current_U is not None:
+            self._current_U[: Nd - 1] = self._U
 
     def _stout_smear_ndarray(self, nstep, rho):
         """Stout smearing using ndarray backend. Copied from ElementalGenerator."""
@@ -1240,7 +1269,7 @@ class CurrentElementalGenerator:
         self._U = backend.asarray(gauge.lexico()[: Nd - 1])
 
     def stout_smear(self, nstep, rho):
-        """Apply stout smearing. Copied from ElementalGenerator."""
+        """Apply spatial stout smearing while retaining temporal raw links."""
         from ..backend import check_QUDA
 
         backend = get_backend()
@@ -1253,6 +1282,108 @@ class CurrentElementalGenerator:
                 self._stout_smear_quda(nstep, rho)
             else:
                 self._stout_smear_ndarray(nstep, rho)
+        if self._current_U is not None:
+            self._current_U[: Nd - 1] = self._U
+
+    def calc_directed_current_raw(self, boundary="periodic"):
+        """Generate the versioned eight-one-link V2V current basis.
+
+        The gauge input order is ``(mu, t, z, y, x, color, color)``. Spatial
+        entries preserve directed links 0..5; entries 6 and 7 are respectively
+        ``U_3(t, x)`` and ``U_3(t - 1, x)^dagger``. Output order is
+        ``(direction, time, momentum, sink_ne, source_ne)``.
+        """
+        from ..insertion.current import build_current_raw_contract
+        from ..insertion.gauge_link import DirectedCurrentBasis
+
+        if boundary not in {"periodic", "open"}:
+            raise ValueError("boundary must be 'periodic' or 'open'")
+        if self._current_U is None:
+            raise ValueError(
+                "directed current raw generation requires loaded four-direction gauge data"
+            )
+        if self._current_U.shape[0] != Nd:
+            raise ValueError("directed current gauge data must have four link directions")
+        if self._eigenvector_data is None:
+            raise ValueError("directed current raw generation requires loaded eigenvectors")
+
+        backend = get_backend()
+        Lx, Ly, Lz, Lt = self.latt_size
+        expected_shape = (Nd, Lt, Lz, Ly, Lx, Nc, Nc)
+        if tuple(self._current_U.shape) != expected_shape:
+            raise ValueError(
+                "directed current gauge data must have shape " + str(expected_shape)
+            )
+        loaded_ne = (
+            self._loaded_eigenvector_count
+            if self._loaded_eigenvector_count is not None
+            else self.Ne
+        )
+        expected_eigenvector_shape = (Lt, loaded_ne, Lz, Ly, Lx, Nc)
+        if tuple(self._eigenvector_data.shape) != expected_eigenvector_shape:
+            raise ValueError(
+                "directed current eigenvector data must have shape "
+                + str(expected_eigenvector_shape)
+            )
+
+        result = backend.zeros(
+            (8, Lt, self.num_momentum, self.usedNe, self.usedNe), dtype="<c16"
+        )
+        for time in range(Lt):
+            vectors = self._eigenvector_data[time, : self.usedNe]
+            for index, _name, vector, gauge_axis, dagger in DirectedCurrentBasis.DIRECTIONS:
+                if gauge_axis == 3:
+                    if index == 6:
+                        if boundary == "open" and time == Lt - 1:
+                            continue
+                        field_time = (time + 1) % Lt
+                        link = self._current_U[3, time]
+                    else:
+                        if boundary == "open" and time == 0:
+                            continue
+                        field_time = (time - 1) % Lt
+                        link = self._current_U[3, field_time].conj().transpose(
+                            0, 1, 2, 4, 3
+                        )
+                    shifted = self._eigenvector_data[field_time, : self.usedNe]
+                    displacement = (0, 0, 0)
+                elif not dagger:
+                    link = self._current_U[gauge_axis, time]
+                    shifted = backend.roll(vectors, -1, 3 - gauge_axis)
+                    displacement = vector[:3]
+                else:
+                    link = backend.roll(
+                        self._current_U[gauge_axis, time], 1, 2 - gauge_axis
+                    )
+                    link = link.conj().transpose(0, 1, 2, 4, 3)
+                    shifted = backend.roll(vectors, 1, 3 - gauge_axis)
+                    displacement = vector[:3]
+
+                for momentum_index, momentum in enumerate(self.momentum_list):
+                    phase = self._momentum_phase.get(momentum)
+                    half_shift = (
+                        displacement[0] * 1j * backend.pi / Lx,
+                        displacement[1] * 1j * backend.pi / Ly,
+                        displacement[2] * 1j * backend.pi / Lz,
+                    )
+                    result[index, time, momentum_index] = backend.exp(
+                        sum(momentum[axis] * half_shift[axis] for axis in range(3))
+                    ) * contract(
+                        "zyx,ezyxa,zyxac,fzyxc->ef",
+                        phase,
+                        vectors.conj(),
+                        link,
+                        shifted,
+                    )
+
+        contract_metadata = build_current_raw_contract(
+            {"v2v": result},
+            boundary=boundary,
+            available_ne=self.Ne,
+            used_ne=self.usedNe,
+            momentum_count=self.num_momentum,
+        )
+        return {"v2v": result, "contract": contract_metadata}
 
     def _gauge_links_product(self, gauge_list, t=None):
         """

@@ -194,6 +194,178 @@ def partition_to_constraints(
     return constraints
 
 
+class CurrentVertexAdapter:
+    """Equal-time adapter for already assembled V2V Current vertices.
+
+    Point-split terms with different bar/field times must use the term-wise
+    contraction bridge in ``lattice.current_elemental`` instead.
+    """
+
+    def __init__(self, vertices_by_time):
+        if not isinstance(vertices_by_time, dict) or not vertices_by_time:
+            raise TypeError(
+                "CurrentVertexAdapter requires a non-empty time-to-vertex dict"
+            )
+        values = {}
+        source_ne = sink_ne = None
+        for time, adapter in vertices_by_time.items():
+            if isinstance(time, bool) or not isinstance(time, (int, np.integer)):
+                raise TypeError("CurrentVertexAdapter time keys must be integers")
+            if not isinstance(adapter, dict):
+                raise TypeError("CurrentVertexAdapter entries must be adapter mappings")
+            if adapter.get("schema") != "lattice.current.assembler/v1":
+                raise ValueError(
+                    "CurrentVertexAdapter entry has an unsupported schema"
+                )
+            if adapter.get("axes") != (
+                "sink_spin",
+                "source_spin",
+                "sink_ne",
+                "source_ne",
+            ):
+                raise ValueError("CurrentVertexAdapter entry has invalid V2V axes")
+            term_count = adapter.get("term_count")
+            if (
+                isinstance(term_count, bool)
+                or not isinstance(term_count, (int, np.integer))
+                or term_count <= 0
+            ):
+                raise ValueError("CurrentVertexAdapter entry has invalid term count")
+            terms = adapter.get("terms")
+            if not isinstance(terms, (list, tuple)) or len(terms) != term_count:
+                raise TypeError(
+                    "CurrentVertexAdapter entry requires complete term endpoint provenance"
+                )
+            for term in terms:
+                endpoints = term.get("endpoints") if isinstance(term, dict) else None
+                endpoint_keys = {
+                    "bar_time",
+                    "field_time",
+                    "link_origin_time",
+                    "temporal_point_split",
+                    "boundary",
+                }
+                if not isinstance(endpoints, dict) or set(endpoints) != endpoint_keys:
+                    raise TypeError(
+                        "CurrentVertexAdapter entry has invalid endpoint provenance"
+                    )
+                for name in ("bar_time", "field_time", "link_origin_time"):
+                    value = endpoints[name]
+                    if isinstance(value, (bool, np.bool_)) or not isinstance(
+                        value, (int, np.integer)
+                    ):
+                        raise TypeError(
+                            "CurrentVertexAdapter endpoint times must be integers"
+                        )
+                if endpoints["boundary"] not in {
+                    "periodic",
+                    "open",
+                    "unbounded",
+                }:
+                    raise ValueError(
+                        "CurrentVertexAdapter endpoint boundary is invalid"
+                    )
+                if not isinstance(
+                    endpoints["temporal_point_split"], (bool, np.bool_)
+                ):
+                    raise TypeError(
+                        "CurrentVertexAdapter temporal endpoint flag must be a bool"
+                    )
+                if endpoints["temporal_point_split"] or (
+                    endpoints["bar_time"] != endpoints["field_time"]
+                ):
+                    raise ValueError(
+                        "CurrentVertexAdapter cannot consume point-split terms; "
+                        "use contract_directed_current_v2v"
+                    )
+            value = np.asarray(adapter.get("vertex"))
+            if (
+                value.ndim != 4
+                or value.shape[:2] != (4, 4)
+                or not np.issubdtype(value.dtype, np.complexfloating)
+                or not np.all(np.isfinite(value))
+            ):
+                raise ValueError(
+                    "CurrentVertexAdapter vertex must be finite complex "
+                    "(4, 4, sink_ne, source_ne)"
+                )
+            entry_ne = adapter.get("ne")
+            if not isinstance(entry_ne, dict) or set(entry_ne) != {"source", "sink"}:
+                raise TypeError("CurrentVertexAdapter entry is missing Ne provenance")
+            counts = {}
+            for axis in ("source", "sink"):
+                axis_ne = entry_ne[axis]
+                if not isinstance(axis_ne, dict) or set(axis_ne) != {
+                    "available",
+                    "used",
+                }:
+                    raise TypeError(
+                        "CurrentVertexAdapter entry has invalid Ne provenance"
+                    )
+                available = axis_ne["available"]
+                used = axis_ne["used"]
+                if (
+                    isinstance(available, (bool, np.bool_))
+                    or not isinstance(available, (int, np.integer))
+                    or isinstance(used, (bool, np.bool_))
+                    or not isinstance(used, (int, np.integer))
+                ):
+                    raise TypeError(
+                        "CurrentVertexAdapter entry has invalid Ne provenance"
+                    )
+                available, used = int(available), int(used)
+                if available < 0 or not 0 <= used <= available:
+                    raise ValueError(
+                        "CurrentVertexAdapter entry has invalid Ne bounds"
+                    )
+                counts[axis] = used
+            entry_source = counts["source"]
+            entry_sink = counts["sink"]
+            if (
+                entry_source < 0
+                or entry_sink < 0
+                or value.shape[2:] != (entry_sink, entry_source)
+            ):
+                raise ValueError(
+                    "CurrentVertexAdapter vertex shape disagrees with Ne provenance"
+                )
+            if source_ne is None:
+                source_ne, sink_ne = entry_source, entry_sink
+            elif (source_ne, sink_ne) != (entry_source, entry_sink):
+                raise ValueError(
+                    "CurrentVertexAdapter entries must share source/sink Ne"
+                )
+            values[int(time)] = value.transpose(1, 0, 3, 2)
+        self._values = values
+        self.used_source_ne = source_ne
+        self.used_sink_ne = sink_ne
+        self.usedNe = source_ne if source_ne == sink_ne else None
+        self.smeared = False
+
+    def get(self, time):
+        if isinstance(time, (int, np.integer)) and not isinstance(
+            time, (bool, np.bool_)
+        ):
+            try:
+                return self._values[int(time)]
+            except KeyError as exc:
+                raise IndexError(
+                    "CurrentVertexAdapter has no vertex for requested time"
+                ) from exc
+        indices = np.asarray(time)
+        if indices.ndim != 1 or not np.issubdtype(indices.dtype, np.integer):
+            raise TypeError(
+                "CurrentVertexAdapter time must be an integer or "
+                "one-dimensional integer array"
+            )
+        try:
+            return np.stack([self._values[int(index)] for index in indices], axis=0)
+        except KeyError as exc:
+            raise IndexError(
+                "CurrentVertexAdapter has no vertex for requested time"
+            ) from exc
+
+
 class QuarkDiagramOriginal:
     def __init__(self, adjacency_matrix) -> None:
         self.adjacency_matrix = adjacency_matrix
@@ -3450,8 +3622,16 @@ def compute_diagrams_multitime(
                 src_vertex = vertex_list[item[1]]
                 snk_vertex = vertex_list[item[2]]
 
-                usedNe_source = getattr(src_vertex, "usedNe", None)
-                usedNe_sink = getattr(snk_vertex, "usedNe", None)
+                usedNe_source = getattr(
+                    src_vertex,
+                    "used_source_ne",
+                    getattr(src_vertex, "usedNe", None),
+                )
+                usedNe_sink = getattr(
+                    snk_vertex,
+                    "used_sink_ne",
+                    getattr(snk_vertex, "usedNe", None),
+                )
                 usedNp_source = getattr(src_vertex, "usedNp", None)
                 usedNp_sink = getattr(snk_vertex, "usedNp", None)
 
