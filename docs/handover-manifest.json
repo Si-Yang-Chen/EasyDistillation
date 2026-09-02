@@ -49,16 +49,16 @@
       "sha256": "5cb23d8141b9ee93bf65cbb023cc5ac9a5f71dff9e00a5bf604bddc3ff08b2a3"
     },
     {
-      "bytes": 7738,
+      "bytes": 7859,
       "git_state": "clean",
       "path": "HANDOVER.md",
-      "sha256": "2853a1a2fdf78cc092866e04166f3a97f3e0e666e8d4d31e9f0c727982fe565e"
+      "sha256": "116cbf817f8a591afb8ec681e77cb55381c4c3111b353a95c85ea72d1df9e253"
     },
     {
-      "bytes": 12195,
+      "bytes": 12314,
       "git_state": "clean",
       "path": "INVENTORY.md",
-      "sha256": "d024bc253d77124942c3261610755adc960d42b2edd4ec096885947ba5dc0ab4"
+      "sha256": "3f53e927a294e1e75b54fae8c069e33cf24eab3a622df63bdd81f26876bd0702"
     },
     {
       "bytes": 3074,
@@ -73,10 +73,10 @@
       "sha256": "a48cd533d795d6cb32cd32127e164f924c771a3cbb2516e0e1965e08d97e2727"
     },
     {
-      "bytes": 5191,
+      "bytes": 5417,
       "git_state": "clean",
       "path": "TASKBOARD.md",
-      "sha256": "dcbc93ad64b6467e436657a47f28efc81fb2bdb078be9eab4bcb2eeda95a8231"
+      "sha256": "0cd0c71999359d323ebf749f1c21c40e556f614e3a7e4804fbb48c0bb53f2cdb"
     },
     {
       "bytes": 3320,
@@ -97,22 +97,28 @@
       "sha256": "8a8f88bb7f2df9966d4de7de14d8f1174a761e8940988fe48fd93ab8aafc2b6a"
     },
     {
-      "bytes": 2733,
+      "bytes": 2772,
       "git_state": "clean",
       "path": "docs/delivery-files.list",
-      "sha256": "5b76ba7674ff4a949cb6b463dd800d6933336960f694b70460a5b6c2992efc35"
+      "sha256": "eff668cc2f7bbf404f018f393ad8ea08a08236869c7745d92763019e5c625084"
     },
     {
-      "bytes": 550,
+      "bytes": 589,
       "git_state": "clean",
       "path": "docs/handover-files.list",
-      "sha256": "0cbbacb2a50aac6e24d2134beac4d49aa99da74c3473be178704f8fd376fdf7e"
+      "sha256": "967e363062baf0ec27e96c53bd6a5fef6e20f987e08fc518183726ad0ea64ac9"
     },
     {
       "bytes": 8505,
       "git_state": "clean",
       "path": "docs/kunshan-current-measurement-readiness.md",
       "sha256": "32b3c029c13169adea80725753d8097a3c9fa86aedd9ea1be3ab562bb8514583"
+    },
+    {
+      "bytes": 4674,
+      "git_state": "clean",
+      "path": "docs/kunshan-current-vsv-pair-smoke.md",
+      "sha256": "d00165a3cb172c085c0b45e7a4f71f95c8881e1a74cf60a9e2a98dd194c9ba38"
     },
     {
       "bytes": 7168,
@@ -367,10 +373,10 @@
       "sha256": "4f798085b3c08464d7e452a7cf414d7c63716871d8ba00a349dcdc9c2b58708a"
     },
     {
-      "bytes": 16219,
+      "bytes": 16859,
       "git_state": "clean",
       "path": "tests/test_handover_manifest.py",
-      "sha256": "ddf245c8aa0cd3022cfdd04a85e8ca481207ad3116de06e08fee0289f0b2165a"
+      "sha256": "e6284ad61b0aacc8417ff53554979d11c24d8824d87ad66d4f5821c355eb57ac"
     },
     {
       "bytes": 2744,
@@ -385,13 +391,13 @@
       "sha256": "54cfa022b6c6394e70a0502c808d356a9ed288c066846ff94254a1ad2700b8b5"
     },
     {
-      "bytes": 24873,
+      "bytes": 24969,
       "git_state": "clean",
       "path": "tools/build_handover_manifest.py",
-      "sha256": "6954e286d73ee34881ad8745e7f7744c587a708771f638051de8bd97567ed7ad"
+      "sha256": "49d634eda5eb5e2c3963dc42e63182c06c3a6b4e94b3fe37a44465f1550e33a1"
     }
   ],
-  "generated_utc": "2026-09-02T22:06:19.883112+00:00",
+  "generated_utc": "2026-09-02T22:55:30.401923+00:00",
   "git": {
     "accepted_external_refs": {
       "origin/feature-stochastic": "f6ba3fb024ae254688d8ad778cdea4766ec669c4",
@@ -399,10 +405,10 @@
     },
     "branch": "feature/wilson-current-j4",
     "dirty": true,
-    "head": "be59270773dc7153ca3ec877e249d96b5eab815a",
+    "head": "532fc59c39b92424b58e67449507a5f249bbbd44",
     "origin_url": "git@github.com:Si-Yang-Chen/EasyDistillation.git"
   },
-  "manifest_identity": "deef1c7a7c2900957f714c296d7066fe21b5503a1fc9ee61b0087a957e2b1779",
+  "manifest_identity": "042861f4713663b21f68c6d748d96d1f3378e691ac4dbae6793544bf5629d160",
   "project_root_at_generation": "C:/Users/Lenovo/Project/lattice-flow-restart",
   "release": {
     "published_git_ref": null,
