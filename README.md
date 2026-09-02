@@ -20,6 +20,11 @@ See [Quick Reference](QUICK_REFERENCE.md) for a getting-started guide, API cheat
 
 | Document | Description |
 |----------|-------------|
+| [Wilson Current Handover](HANDOVER.md) | Current status, evidence levels, workstreams, and next actions |
+| [Restart Runbook](RESTART.md) | Multi-agent preflight, local verification, and safe Kunshan recovery |
+| [Delivery Inventory](INVENTORY.md) | Scoped delivery allowlist, exclusions, and external-data boundary |
+| [Permanence & Deployment](docs/permanence-and-deployment.md) | Commit, integration, deployment snapshot, result, and recovery gates |
+| [Current Taskboard](TASKBOARD.md) | Live task state, blockers, and acceptance snapshot |
 | [Quick Reference](QUICK_REFERENCE.md) | Fast lookup for common operations |
 | [Project Architecture](PROJECT_ARCHITECTURE.md) | Full architecture and development guide |
 | [Data Shapes](doc/README.md) | Data type shapes and file naming conventions |
@@ -32,7 +37,7 @@ See [Quick Reference](QUICK_REFERENCE.md) for a getting-started guide, API cheat
 
 ## Requirements
 
-- Python ≥ 3.8
+- Python ≥ 3.9
 - NumPy, SciPy
 - [opt_einsum](https://github.com/dgasmith/opt_einsum)
 - [SymPy](https://www.sympy.org/) (for symbolic simplification)

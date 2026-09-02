@@ -14,6 +14,9 @@ logs
 venv
 .venv
 tools
-gen*
+!tools/
+tools/*
+!tools/build_handover_manifest.py
+/gen*
 test.py
 test.ipynb

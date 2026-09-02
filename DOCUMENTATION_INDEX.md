@@ -1,6 +1,30 @@
 # EasyDistillation 文档索引
 
-**生成日期**: 2026-06-01 | **项目版本**: 1.0
+**文档类型**: 稳定导航索引 | 动态状态请查看 [TASKBOARD.md](TASKBOARD.md)
+
+---
+
+## ⚡ Wilson 守恒流与 Current×Current
+
+### 用户交接入口
+
+- [Current 工作交接](HANDOVER.md) - 当前完成度、真实证据、两条工作线和下一步
+- [重启操作手册](RESTART.md) - remote/multi-agent preflight、本地验证和 Kunshan 恢复步骤
+- [交付内容清单](INVENTORY.md) - 精确 staging 候选、共享文件、排除项和外部数据边界
+- [实时任务板](TASKBOARD.md) - 当前任务、blocker 和验收快照
+- [永久化与上线规范](docs/permanence-and-deployment.md) - commit、其他 agent 集成、部署 snapshot、数据/结果归档和恢复门禁
+- [交接文档 Manifest](docs/handover-manifest.json) - canonical 完整 delivery exact-byte SHA-256 清单；普通 verify 与 release-ready 是不同门禁
+
+### API 与真实证据
+
+- [Current API 契约](docs/current-api.md) - Wilson terms、spin、Ne、endpoint、artifact 和 contraction schema
+- [时间链接 elemental](docs/temporal-gauge-link-elementals.md) - 八方向 directed raw basis 与 temporal gauge-link 约定
+- [Kunshan 单流 VSV smoke](docs/kunshan-current-vsv-smoke.md) - cfg10000 real-artifact evidence
+- [EasyDistillation 数据地图](docs/kunshan-easydistillation-data-map.md) - 8-cfg 输入绝对路径、shape、axis、hash 和 compatibility
+- [物理测量 readiness](docs/kunshan-current-measurement-readiness.md) - H–J–H/charge readiness v4 与权威 blocker
+- [测量决策清单](docs/conserved-current-measurement-decisions.md) - 物理负责人需批准的 projector、flavor、formula 和 time policy
+
+Current×Current `J4×J4` 两点与 rho charge-normalization H–J–H 三点是不同工作线。任何二点结果都不能冒充 C3，artifact smoke 也不能冒充物理结论。
 
 ---
 

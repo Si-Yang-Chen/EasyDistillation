@@ -1,0 +1,13 @@
+{
+  "schema": "lattice.current.data-retention-decision/v1",
+  "version": 1,
+  "status": "pending",
+  "authority": null,
+  "decided_at": null,
+  "secondary_copy": null,
+  "retention_period": null,
+  "restore_owner": null,
+  "restore_check": null,
+  "deletion_policy": "No authoritative input, production result, manifest, or lineage record may be deleted by this project while the decision is pending.",
+  "rationale": "Kunshan is currently the authoritative large-data environment, but a verified secondary copy or explicit acceptance of single-copy risk has not yet been authorized."
+}
