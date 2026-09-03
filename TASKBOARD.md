@@ -2,8 +2,8 @@
 
 - project_id: `lattice-flow-restart`
 - phase: `J4×J4 ensemble readiness and safe Kunshan integration`
-- updated_at: `2026-09-04T02:00:00+08:00`
-- current_task: `最小开发/长期计划/当前阶段文档结构和专用 branch 已发布；推进 full-size coverage audit`
+- updated_at: `2026-09-04T02:20:00+08:00`
+- current_task: `taskboard 历史保留规则和首次快照已发布；推进 full-size coverage audit`
 - next_action: `重新核对 Kunshan shared checkout，完成 coverage/cost audit，再准备 8-cfg production contract`
 - blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
 - long_term_plan: `PLAN.md`
@@ -27,13 +27,14 @@
 - cfg10000 `Ne=1` 真实 `J4×J4` pair smoke 已通过；证据见 `docs/kunshan-current-vsv-pair-smoke.md`。
 - 本地永久化已形成专用 branch 的分组 commits；tracked worktree 在文档收敛前干净。
 - source-manifest 集成后的完整相关测试通过 `195 passed, 1 skipped`；文档收敛后的 manifest/monitor 测试 `20 passed`；Ruff、format、precheck 和 diff check 通过。
+- taskboard 历史保留规则已写入 `AGENTS.md`；本阶段首次快照见 `docs/archive/taskboard/2026-09-04-j4xj4-ensemble-readiness.md`。
 
 ## 最近动态 snapshot
 
 以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
-- local/remote branch：`feature/wilson-current-j4` / `d1252c8...`，已完成 push；
-- published ref：`origin/feature/wilson-current-j4` 当前指向 `d1252c8...`；manifest 与 fresh clone 已验证；
+- local/remote branch：`feature/wilson-current-j4` / `e6ee172...`，已完成 push；
+- published ref：`origin/feature/wilson-current-j4` 当前指向 `e6ee172...`；taskboard 历史快照已纳入交付清单；manifest 待刷新；
 - Kunshan shared checkout：HEAD `94f8fcdd...`，20 条 dirty/untracked 状态；不得覆盖；
 - Kunshan localized branch：`192ee700372e2a34a5a6848e3655ea5caa1d7bdc` 修改共享模块，当前未兼容合入；
 - 其他 stochastic ref：已判定与本项目无交集时可记录后原样接受；
@@ -49,6 +50,7 @@
 - [ ] 8-cfg endpoint/source coverage 与资源契约；
 - [ ] 8-cfg production result + monitor；
 - [x] remote push + fresh-clone source/manifest/import verification；release-ready 仍受 RET-01 约束；
+- [x] taskboard 历史规则写入 `AGENTS.md`，首次阶段快照已保存；
 - [ ] retention decision resolution；
 - [ ] H–J–H 物理授权。
 
