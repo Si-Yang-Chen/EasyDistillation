@@ -2,8 +2,8 @@
 
 - project_id: `lattice-flow-restart`
 - phase: `J4×J4 ensemble readiness and safe Kunshan integration`
-- updated_at: `2026-09-03T09:00:00+08:00`
-- current_task: `最小开发/长期计划/当前阶段文档结构已完成；准备专用 branch push 和 fresh-clone 验证`
+- updated_at: `2026-09-03T09:30:00+08:00`
+- current_task: `文档结构收敛已完成；准备专用 branch push 和 fresh-clone 验证`
 - next_action: `push 文档收敛后的专用 branch，fresh clone 验证；随后重新核对 Kunshan shared checkout`
 - blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
 - long_term_plan: `PLAN.md`
@@ -32,7 +32,7 @@
 
 以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
-- local branch/HEAD：`feature/wilson-current-j4` / `3970dbf...`（本轮文档结构提交待完成）；
+- local branch/HEAD：`feature/wilson-current-j4` / `14725ba...`（manifest 前最后本地提交；下一次提交后更新）；
 - 最近目标 remote：专用 `wilson-current-j4` branch 尚未确认存在；push 已获持续授权；
 - Kunshan shared checkout：HEAD `94f8fcd...`，存在 dirty/untracked 变化；不得覆盖；
 - Kunshan localized branch：`192ee700...` 修改共享模块，当前未兼容合入；
