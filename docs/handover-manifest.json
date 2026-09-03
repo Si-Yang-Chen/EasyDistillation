@@ -421,7 +421,7 @@
       "sha256": "49d634eda5eb5e2c3963dc42e63182c06c3a6b4e94b3fe37a44465f1550e33a1"
     }
   ],
-  "generated_utc": "2026-09-03T17:44:41.418512+00:00",
+  "generated_utc": "2026-09-03T17:44:46.295144+00:00",
   "git": {
     "accepted_external_refs": {
       "origin/feature-stochastic": "f6ba3fb024ae254688d8ad778cdea4766ec669c4",
@@ -429,14 +429,14 @@
     },
     "branch": "feature/wilson-current-j4",
     "dirty": true,
-    "head": "7c7e0d240ba5d094ee861c1f1d15f004b096ca53",
+    "head": "6a4bb01119d8782495c9f9be8ade59dc274b1e19",
     "origin_url": "git@github.com:Si-Yang-Chen/EasyDistillation.git"
   },
-  "manifest_identity": "1a33cb90c334f926fe0b711998f5182922a261e1d22cccfa8806f5ccba8d5bf8",
+  "manifest_identity": "d51cde35a5cb77716d3098f405f81a39881bf410f4575441d6a3867b59a7208f",
   "project_root_at_generation": "C:/Users/Lenovo/Project/lattice-flow-restart",
   "release": {
     "published_git_ref": {
-      "contains_recorded_head": true,
+      "contains_recorded_head": false,
       "name": "origin/feature/wilson-current-j4",
       "observed_commit": "7c7e0d240ba5d094ee861c1f1d15f004b096ca53"
     },
