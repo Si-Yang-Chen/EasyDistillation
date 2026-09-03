@@ -15,6 +15,7 @@
 - [长期计划](PLAN.md) - 跨阶段目标和长期路线
 - [永久化与上线入口](docs/permanence-and-deployment.md) - 何时阅读归档以及当前永久化原则
 - [Kunshan/永久化归档](docs/archive/2026-09-03-kunshan-permanence.md) - 详细部署、数据、结果和恢复门禁
+- [任务板历史快照](docs/archive/taskboard/2026-09-04-j4xj4-ensemble-readiness.md) - 当前阶段首次归档的只读 taskboard
 - [交接文档 Manifest](docs/handover-manifest.json) - canonical 完整 delivery exact-byte SHA-256 清单；普通 verify 与 release-ready 是不同门禁
 
 ### API 与真实证据

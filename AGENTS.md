@@ -12,6 +12,13 @@
 - 已有且兼容的产物优先复用；确认缺失、损坏或不兼容后，允许按批准流程在 Kunshan 补算，包括传播子，但不得任意扩大资源。
 - 不伪造数据、hash、作业状态或物理结论；合成测试必须标记为合成证据。
 
+## 任务板历史
+
+- `TASKBOARD.md` 只记录当前阶段；已使用的 taskboard 必须保留，不得覆盖或删除。
+- 在阶段切换、重大部署、生产作业提交或交接前，将当前 taskboard 复制到 `docs/archive/taskboard/`，文件名使用 `YYYY-MM-DD-<phase>.md`，并保留当时的 HEAD、测试、Job ID 和 blocker 原文。
+- 历史快照只读保存；后续状态更新只修改 `TASKBOARD.md`，不得回写旧快照。新的快照必须使用新文件名。
+- taskboard 历史属于交付 lineage；新增快照后同步更新 `docs/delivery-files.list`、`docs/handover-files.list`（若需要交接）和 `docs/handover-manifest.json`。
+
 ## Kunshan 规则
 
 - 登录节点没有 DCU。GPU/CuPy/PyQUDA/QUDA 必须通过 Slurm 计算节点；登录节点只做 CPU 只读检查、manifest/hash 校验和轻量 NumPy 工作。
