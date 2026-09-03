@@ -2,8 +2,8 @@
 
 - project_id: `lattice-flow-restart`
 - phase: `J4×J4 ensemble readiness and safe Kunshan integration`
-- updated_at: `2026-09-04T03:40:00+08:00`
-- current_task: `full-time VSV coverage audit、J4×J4 matrix driver、执行记录和 Slurm templates 已准备；等待 storage`
+- updated_at: `2026-09-04T04:30:00+08:00`
+- current_task: `full-time VSV coverage audit、J4×J4 matrix/ensemble collector、执行记录和 Slurm templates 已准备；等待 storage`
 - next_action: `storage 到位后先生成 full-time VSV，再运行 coverage audit，随后做 approved resource pilot`
 - blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
 - long_term_plan: `PLAN.md`
@@ -28,14 +28,14 @@
 - 本地永久化已形成专用 branch 的分组 commits；tracked worktree 在文档收敛前干净。
 - source-manifest 集成后的完整相关测试通过 `195 passed, 1 skipped`；文档收敛后的 manifest/monitor 测试 `20 passed`；Ruff、format、precheck 和 diff check 通过。
 - taskboard 历史保留规则已写入 `AGENTS.md`；本阶段首次快照见 `docs/archive/taskboard/2026-09-04-j4xj4-ensemble-readiness.md`。
-- full-time 生产骨架已完成：coverage audit、full-time VSV slab accessor、CuPy backend option、one-config wrapper、execution-record generator、Current artifact array template、J4×J4 array template 和 CPU regression。
+- full-time 生产骨架已完成：coverage audit、full-time VSV slab accessor、CuPy backend option、one-config wrapper、execution-record generator、Current artifact array template、J4×J4 array template、ensemble collector 和 CPU regression。
 
 ## 最近动态 snapshot
 
 以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
 - local/remote branch：`feature/wilson-current-j4` / `e6ee172...`，已完成 push；
-- published ref：`origin/feature/wilson-current-j4` 当前指向 `e6ee172...`；taskboard 历史快照已纳入交付清单；manifest 待刷新；
+- published ref：`origin/feature/wilson-current-j4` 当前指向 `29d353d...`；full-time workflow code 待 manifest refresh；
 - Kunshan shared checkout：HEAD `94f8fcdd...`，20 条 dirty/untracked 状态；不得覆盖；
 - Kunshan localized branch：`192ee700372e2a34a5a6848e3655ea5caa1d7bdc` 修改共享模块，当前未兼容合入；
 - 其他 stochastic ref：已判定与本项目无交集时可记录后原样接受；
@@ -50,6 +50,7 @@
 - [ ] shared checkout/branch 兼容 preflight；
 - [x] 8-cfg endpoint/source coverage read-only preflight；
 - [ ] full-time VSV 生成后的 hash-enabled coverage 与资源契约；
+- [x] 8-cfg item results collector and result-manifest verification（CPU synthetic regression）；
 - [ ] 8-cfg production result + monitor；
 - [x] remote push + fresh-clone source/manifest/import verification；release-ready 仍受 RET-01 约束；
 - [x] taskboard 历史规则写入 `AGENTS.md`，首次阶段快照已保存；

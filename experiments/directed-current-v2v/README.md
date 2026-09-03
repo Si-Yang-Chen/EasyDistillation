@@ -4,7 +4,7 @@ This directory contains three separate layers:
 
 1. `generate_current_artifact_dcu.py` generates one eight-direction directed Wilson-current V2V artifact on a DCU node.
 2. `contract_existing_vsv.py` and `contract_existing_vsv_pair.py` perform one-time or one-pair artifact smoke checks with an already audited VSV input.
-3. `audit_fullsize_coverage.py`, `prepare_fulltime_execution_record.py`, `contract_fulltime_vsv_pair.py`, and `run_fulltime_vsv_pair_ensemble.py` prepare and run the full-`t` ensemble matrix once full-time VSV data exist.
+3. `audit_fullsize_coverage.py`, `prepare_fulltime_execution_record.py`, `contract_fulltime_vsv_pair.py`, `run_fulltime_vsv_pair_ensemble.py`, and `collect_fulltime_vsv_pair_ensemble.py` prepare, run, and collect the full-`t` ensemble matrix once full-time VSV data exist.
 
 The full-time output has axes `(first_current_anchor, second_current_anchor)` and is an ordered, connected, unflavored, unsigned raw V2V trace. It does not add a Wick sign, flavor/electric-charge factor, normalization, conjugation, real-part selection, source averaging, fit, Ward--Takahashi test, or charge-normalization interpretation.
 
@@ -76,13 +76,13 @@ python experiments/directed-current-v2v/run_fulltime_vsv_pair_ensemble.py \
   --current-direction 3
 ```
 
-The wrapper creates `result-root/<configuration>/execution-record.json` and `result-root/<configuration>/result/`. It is deliberately one configuration per process so an ensemble array can give every configuration an independent result lineage.
+The wrapper creates `result-root/<configuration>/execution-record.json` and `result-root/<configuration>/result/`. It is deliberately one configuration per process so an ensemble array can give every configuration an independent result lineage. After all item monitors pass, `collect_fulltime_vsv_pair_ensemble.py` verifies every item and atomically publishes a stacked `(Ncfg,72,72)` artifact.
 
 ## Slurm preparation
 
 `fulltime-production-contract.template.json` is the input/resource contract to fill after storage and a resource pilot are approved. `submit_directed_current_artifact_array.slurm.template` first produces one Current artifact per configuration; `submit_fulltime_vsv_pair_array.slurm.template` then consumes those artifacts and the full-time VSV directory. Both are templates, not submission commands. Before use, replace every `REPLACE_*` value, verify the source snapshot and worktree state, create a dedicated result root, and bind the exact current artifacts, full-time VSV directory, source manifest, `Ne`, Wilson `r`, and resource contract. The templates use one DCU, eight CPUs, one node, and array concurrency `1`; they must still pass the site preflight and monitor requirements in `.cursor/skills/dcu-slurm-submit/SKILL.md`.
 
-No full-time production job is authorized merely because this template exists. First run the read-only audit, then perform an approved resource pilot, then submit the eight configuration jobs with a durable ledger and monitor. A completed matrix is an artifact result, not an ensemble physics conclusion.
+No full-time production job is authorized merely because these templates exist. First run the read-only audit, then perform an approved resource pilot, then submit the eight configuration jobs with a durable ledger and monitor. After every item has passed, collect the ensemble artifact and verify its manifest. A completed matrix is an artifact result, not an ensemble physics conclusion.
 
 ## Existing VSV smoke
 
