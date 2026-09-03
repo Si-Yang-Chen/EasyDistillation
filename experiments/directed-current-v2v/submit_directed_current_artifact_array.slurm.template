@@ -1,0 +1,47 @@
+#!/bin/bash
+#SBATCH -J wilson-j4-artifact
+#SBATCH -p kshdnormal
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=dcu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --time=72:00:00
+#SBATCH --comment=BASE
+#SBATCH --array=0-7%1
+#SBATCH -o REPLACE_RESULT_ROOT/logs/%A_%a.out
+#SBATCH -e REPLACE_RESULT_ROOT/logs/%A_%a.err
+
+set -euo pipefail
+
+SOURCE_ROOT="REPLACE_SOURCE_ROOT"
+PYTHON="REPLACE_PYTHON"
+RESULT_ROOT="REPLACE_RESULT_ROOT"
+GAUGE_PREFIX="REPLACE_GAUGE_PREFIX"
+EIGENVECTOR_PREFIX="REPLACE_EIGENVECTOR_PREFIX"
+POINT_PREFIX="REPLACE_POINT_PREFIX"
+AVAILABLE_NE="REPLACE_AVAILABLE_NE"
+USED_NE="REPLACE_USED_NE"
+SOURCE_GIT_COMMIT="REPLACE_SOURCE_GIT_COMMIT"
+SOURCE_GIT_DIRTY="REPLACE_SOURCE_GIT_DIRTY"
+CONFIGURATIONS=(10000 13000 14000 15000 16000 17000 18000 19000)
+
+source "$HOME/.bashrc"
+cd "$SOURCE_ROOT"
+mkdir -p "$RESULT_ROOT/logs"
+export PYTHONPATH="$SOURCE_ROOT:${PYTHONPATH:-}"
+export LATTICE_EXECUTION_CLUSTER=kunshan
+export LATTICE_SOURCE_GIT_COMMIT="$SOURCE_GIT_COMMIT"
+export LATTICE_SOURCE_GIT_DIRTY="$SOURCE_GIT_DIRTY"
+export LATTICE_EXECUTION_RESOURCES_JSON='{"mode":"dcu-directed-current-artifact","nodes":1,"cpus":8,"dcu":1,"array_concurrency":1}'
+
+CFG="${CONFIGURATIONS[$SLURM_ARRAY_TASK_ID]}"
+exec "$PYTHON" "$SOURCE_ROOT/experiments/directed-current-v2v/generate_current_artifact_dcu.py" \
+  --configuration "$CFG" \
+  --result-dir "$RESULT_ROOT/$CFG" \
+  --available-ne "$AVAILABLE_NE" \
+  --used-ne "$USED_NE" \
+  --gauge-prefix "$GAUGE_PREFIX" \
+  --eigenvector-prefix "$EIGENVECTOR_PREFIX" \
+  --point-prefix "$POINT_PREFIX" \
+  --git-commit "$SOURCE_GIT_COMMIT" \
+  --logical-test-id "wilson-j4-directed-artifact-$CFG"

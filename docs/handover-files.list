@@ -22,5 +22,15 @@ docs/delivery-files.list
 docs/handover-files.list
 docs/ledger/decisions.md
 docs/ledger/facts.md
+experiments/directed-current-v2v/README.md
+experiments/directed-current-v2v/audit_fullsize_coverage.py
+experiments/directed-current-v2v/contract_fulltime_vsv_pair.py
+experiments/directed-current-v2v/fulltime-production-contract.template.json
+experiments/directed-current-v2v/prepare_fulltime_execution_record.py
+experiments/directed-current-v2v/run_fulltime_vsv_pair_ensemble.py
+experiments/directed-current-v2v/submit_directed_current_artifact_array.slurm.template
+experiments/directed-current-v2v/submit_fulltime_vsv_pair_array.slurm.template
+experiments/directed-current-v2v/test_audit_fullsize_coverage_cpu.py
+experiments/directed-current-v2v/test_fulltime_vsv_pair_cpu.py
 tools/build_handover_manifest.py
 tests/test_handover_manifest.py

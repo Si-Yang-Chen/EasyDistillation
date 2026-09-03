@@ -496,6 +496,7 @@ def contract_directed_current_pair_v2v(
     second_bar_ne,
     first_momentum=0,
     second_momentum=0,
+    array_backend=None,
 ):
     """Close two point-split Current vertices with preloaded VSV blocks.
 
@@ -510,6 +511,9 @@ def contract_directed_current_pair_v2v(
     ``vsv`` must already be loaded and expose ``get(t_source, t_sink)``.  This
     function never loads or generates propagators.
     """
+    backend = np if array_backend is None else array_backend
+    if not callable(getattr(backend, "asarray", None)) or not callable(getattr(backend, "einsum", None)):
+        raise TypeError("array_backend must provide callable asarray and einsum")
     first_validated = validate_current_raw_contract(first_raw, first_raw_contract, require_temporal=True)
     second_validated = validate_current_raw_contract(second_raw, second_raw_contract, require_temporal=True)
     first_shape = first_validated["shapes"]["v2v"]
@@ -601,19 +605,23 @@ def contract_directed_current_pair_v2v(
                 source_ne=ne_counts["second_field_ne"],
                 sink_ne=ne_counts["second_bar_ne"],
             )
-            first_to_second = _vsv_block(
-                vsv.get(
-                    first_endpoints["field_time"],
-                    second_endpoints["bar_time"],
-                ),
-                "first-to-second VSV block",
+            first_to_second = backend.asarray(
+                _vsv_block(
+                    vsv.get(
+                        first_endpoints["field_time"],
+                        second_endpoints["bar_time"],
+                    ),
+                    "first-to-second VSV block",
+                )
             )
-            second_to_first = _vsv_block(
-                vsv.get(
-                    second_endpoints["field_time"],
-                    first_endpoints["bar_time"],
-                ),
-                "second-to-first VSV block",
+            second_to_first = backend.asarray(
+                _vsv_block(
+                    vsv.get(
+                        second_endpoints["field_time"],
+                        first_endpoints["bar_time"],
+                    ),
+                    "second-to-first VSV block",
+                )
             )
             if (
                 first_to_second.shape[2] < ne_counts["second_bar_ne"]
@@ -635,9 +643,9 @@ def contract_directed_current_pair_v2v(
                 : ne_counts["first_bar_ne"],
                 : ne_counts["second_field_ne"],
             ]
-            first_vertex = first_resolved["value"]
-            second_vertex = second_resolved["value"]
-            pair_value = np.einsum(
+            first_vertex = backend.asarray(first_resolved["value"])
+            second_vertex = backend.asarray(second_resolved["value"])
+            pair_value = backend.einsum(
                 "bfji,ackl,afki,bcjl->",
                 first_to_second,
                 second_to_first,
@@ -649,7 +657,7 @@ def contract_directed_current_pair_v2v(
             second_mapping = second_term.as_dict() if hasattr(second_term, "as_dict") else second_term
             first_weight = first_mapping["coefficient"] * first_mapping.get("normalization", 1)
             second_weight = second_mapping["coefficient"] * second_mapping.get("normalization", 1)
-            weighted = np.asarray(first_weight * second_weight * pair_value)
+            weighted = backend.asarray(first_weight * second_weight * pair_value)
             result = weighted.copy() if result is None else result + weighted
             records.append(
                 {

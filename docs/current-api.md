@@ -121,6 +121,8 @@ The result records assembler schema/version, assembled value, term count, indepe
 
 Temporal/cross-time V2V 使用 `lattice.current_elemental.contract_directed_current_v2v()`。它逐 term 解析端点并调用两个**已加载** VSV accessor：`outgoing.get(field_time, sink_time)` 与 `incoming.get(source_time, bar_time)`；随后计算 `afAi,bfji,bcjC->acAC`，最后才乘 `coefficient * normalization` 并求和。该函数不会调用 `load()`、传播子生成器或反演代码。反向 raw channel 已包含 dagger，消费端不会再次共轭或转置。
 
+`contract_directed_current_pair_v2v()` 对两个 Current 枚举四个 ordered term pairs，计算 `bfji,ackl,afki,bcjl->` 的 connected scalar。可选 `array_backend` 只改变 NumPy/CuPy 的数组执行位置，不改变 contraction equation 或物理约定；函数仍不隐含 Wick sign、flavor factor、normalization、conjugation、取实部或 source averaging。full-time 生产驱动位于 `experiments/directed-current-v2v/contract_fulltime_vsv_pair.py`，输出轴固定为 `(first_current_anchor, second_current_anchor)`。
+
 `save_directed_current_v2v()` / `load_directed_current_v2v()` 提供生产文件协议：内容寻址 `.npy`、最后原子发布的 `manifest.json`、严格 raw contract、配置号、动量、gauge/eigenvector 来源文件 SHA-256、数据 SHA-256 和消费公式版本。加载默认重新读取并校验来源文件与数据文件；只有显式 `verify_sources=False` 才允许在来源文件未挂载的离线搬运场景仅检查 manifest/data，此模式不能作为来源审计通过证据。
 
 `consume_spin_aware_current(adapter, sink_spin, source_spin)` 仍是最小 eager CPU consumer。以上生产桥目前仅覆盖 V2V；V2P/P2V/P2P 仍需要各自的 point elemental 与 VSP/PSV/PSP 语义。

@@ -1,0 +1,50 @@
+{
+  "schema": "lattice.current.fulltime-vsv-v2v-production-contract/v1",
+  "status": "template",
+  "classification": "raw-artifact-production-not-physics-validation",
+  "configurations": ["10000", "13000", "14000", "15000", "16000", "17000", "18000", "19000"],
+  "current": {
+    "direction": 3,
+    "wilson_r": 1.0,
+    "current_ne": 128,
+    "first_momentum_index": 0,
+    "second_momentum_index": 0,
+    "artifact_root": "REQUIRES_ABSOLUTE_CURRENT_ARTIFACT_ROOT"
+  },
+  "vsv": {
+    "directory": "REQUIRES_ABSOLUTE_FULLTIME_VSV_DIRECTORY",
+    "manifest": "REQUIRES_ABSOLUTE_FULLTIME_VSV_DIRECTORY/manifest.json",
+    "layout": "source-time-rank-slab",
+    "time_convention": "absolute-global-source-and-sink",
+    "required_source_times": "0..71",
+    "hash_mode": "sha256-before-and-after"
+  },
+  "source": {
+    "manifest": "REQUIRES_ABSOLUTE_SOURCE_MANIFEST",
+    "git_commit": "REQUIRES_40_HEX_SOURCE_COMMIT",
+    "git_dirty": false
+  },
+  "execution": {
+    "backend": "cupy",
+    "partition": "kshdnormal",
+    "account": "ybyang",
+    "nodes": 1,
+    "cpus_per_task": 8,
+    "dcu": 1,
+    "array_concurrency": 1,
+    "wall_time": "72:00:00",
+    "result_root": "REQUIRES_NEW_ABSOLUTE_RESULT_ROOT",
+    "job_ledger": "REQUIRES_ABSOLUTE_JOB_LEDGER"
+  },
+  "output": {
+    "axes": ["first_current_anchor", "second_current_anchor"],
+    "shape": [72, 72],
+    "dtype": "<c16",
+    "required_files": ["correlator-<sha256>.npy", "manifest.json", "result.json", "DONE"],
+    "implicit_physics_factors": []
+  },
+  "approval": {
+    "resource_pilot": "REQUIRES_APPROVED_PILOT_REFERENCE",
+    "measurement_contract": "not-required-for-raw-current-current-artifact"
+  }
+}
