@@ -2,9 +2,9 @@
 
 - project_id: `lattice-flow-restart`
 - phase: `J4×J4 ensemble readiness and safe Kunshan integration`
-- updated_at: `2026-09-03T08:00:00+08:00`
-- current_task: `文档收敛完成；推进 full-size 双 point-split endpoint/source coverage 和 8-cfg production contract`
-- next_action: `重新核对 remote/Kunshan shared checkout，完成 coverage/cost audit，再决定是否提交 8-cfg production`
+- updated_at: `2026-09-03T08:30:00+08:00`
+- current_task: `文档收敛完成；准备专用 branch push 和 fresh-clone 验证，随后推进 full-size coverage audit`
+- next_action: `push 文档收敛后的专用 branch，fresh clone 验证；随后重新核对 Kunshan shared checkout`
 - blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
 - long_term_plan: `PLAN.md`
 
@@ -16,7 +16,7 @@
 | ENS-02 | pending | 8-cfg Wilson `J4×J4` production input/result contract | cfg10000 pair smoke 已通过；无 ensemble result | 生成新 manifest、资源估算、输出根和 job ledger |
 | ENS-03 | pending | 8-cfg Slurm production、持久 monitor 和结果审计 | 尚无新 production job | 资源确认后按批准流程提交，不伪装成测试 |
 | INT-01 | pending | 与 localized-blending 共享模块兼容集成 | Kunshan branch `192ee700...` 触及共享路径 | 重新 diff 双方 ref，保留双方语义并跑兼容测试 |
-| PUSH-01 | in-progress | 专用 branch remote 发布和 fresh-clone 验证 | 本地 commits 已完成；用户已授权后续 push | 文档提交后重新 fetch、push、fresh clone 验证 |
+| PUSH-01 | in-progress | 专用 branch remote 发布和 fresh-clone 验证 | 本地文档收敛 commit 已完成；用户已持续授权 push | push 后运行 fresh clone manifest verify |
 | RET-01 | awaiting-user-decision | 大型数据 retention | `docs/data-retention-decision.json` 为 `pending` | 用户选择 `approved` secondary copy 或签署 `not-required` |
 | PHY-01 | blocked-by-authority | rho charge/WT H–J–H measurement | readiness v4 `ready=false` | 获得 approved measurement contract 和 C3 定义 |
 
@@ -32,7 +32,7 @@
 
 以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
-- local branch/HEAD：`feature/wilson-current-j4` / `5d91ca6...`（本轮文档收敛待提交）；
+- local branch/HEAD：`feature/wilson-current-j4` / `f3f7536...`；
 - 最近目标 remote：专用 `wilson-current-j4` branch 尚未确认存在；push 已获持续授权；
 - Kunshan shared checkout：HEAD `94f8fcd...`，存在 dirty/untracked 变化；不得覆盖；
 - Kunshan localized branch：`192ee700...` 修改共享模块，当前未兼容合入；
