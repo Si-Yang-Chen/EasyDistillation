@@ -31,6 +31,12 @@
       "sha256": "0eef0a9d6165ca32fb46fd29dc0ae4b3332a147867f7416e2c87f4f0c85c4d46"
     },
     {
+      "bytes": 832,
+      "git_state": "clean",
+      "path": ".gitattributes",
+      "sha256": "7f2bdcc21b23cd5fc1df4b833850a7d5ca8be30acf76128b4ea806684e2fe5eb"
+    },
+    {
       "bytes": 188,
       "git_state": "clean",
       "path": ".gitignore",
@@ -115,10 +121,10 @@
       "sha256": "8a8f88bb7f2df9966d4de7de14d8f1174a761e8940988fe48fd93ab8aafc2b6a"
     },
     {
-      "bytes": 2867,
+      "bytes": 2882,
       "git_state": "clean",
       "path": "docs/delivery-files.list",
-      "sha256": "944f580fbd06363ea98aee348a3f94333ed423a1d6913a791caadfc6a2db3301"
+      "sha256": "afce815847e78f18494ec7dfd8c1621a28f0b213bf492e08bba43f901804fad2"
     },
     {
       "bytes": 684,
@@ -415,7 +421,7 @@
       "sha256": "49d634eda5eb5e2c3963dc42e63182c06c3a6b4e94b3fe37a44465f1550e33a1"
     }
   ],
-  "generated_utc": "2026-09-03T17:06:25.855362+00:00",
+  "generated_utc": "2026-09-03T17:41:01.366058+00:00",
   "git": {
     "accepted_external_refs": {
       "origin/feature-stochastic": "f6ba3fb024ae254688d8ad778cdea4766ec669c4",
@@ -423,10 +429,10 @@
     },
     "branch": "feature/wilson-current-j4",
     "dirty": true,
-    "head": "24b90e1e6a8101c7b865c6b2f68b05436ae313ee",
+    "head": "966057fd5b1fea2378e5b4eecf03fe2f96503e6e",
     "origin_url": "git@github.com:Si-Yang-Chen/EasyDistillation.git"
   },
-  "manifest_identity": "7ce141d2e178a1e2f1b98d97fc9036a5b53c8260802892f6b3acbcf7203e87c7",
+  "manifest_identity": "12db3713b70848d83ff8d2dd958f0b86f63fc505bfb8329bd7b4218f89bca493",
   "project_root_at_generation": "C:/Users/Lenovo/Project/lattice-flow-restart",
   "release": {
     "published_git_ref": null,
