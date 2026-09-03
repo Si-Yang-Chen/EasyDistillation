@@ -2,9 +2,9 @@
 
 - project_id: `lattice-flow-restart`
 - phase: `J4×J4 ensemble readiness and safe Kunshan integration`
-- updated_at: `2026-09-04T01:45:00+08:00`
-- current_task: `文档结构收敛和专用 branch 已 push；完成 manifest fresh-clone 验证，随后推进 full-size coverage audit`
-- next_action: `刷新并 push published handover manifest，完成 strict fresh-clone 文档验证；随后重新核对 Kunshan shared checkout`
+- updated_at: `2026-09-04T02:00:00+08:00`
+- current_task: `最小开发/长期计划/当前阶段文档结构和专用 branch 已发布；推进 full-size coverage audit`
+- next_action: `重新核对 Kunshan shared checkout，完成 coverage/cost audit，再准备 8-cfg production contract`
 - blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
 - long_term_plan: `PLAN.md`
 
@@ -32,8 +32,8 @@
 
 以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
-- local/remote branch：`feature/wilson-current-j4` / `8e83e334...`，已完成 fast-forward push；本轮 taskboard/manifest refresh 后待再次 push；
-- published ref：`origin/feature/wilson-current-j4` 当前指向 `8e83e334...`；taskboard/manifest refresh 后需再次 push manifest commit；
+- local/remote branch：`feature/wilson-current-j4` / `d1252c8...`，已完成 push；
+- published ref：`origin/feature/wilson-current-j4` 当前指向 `d1252c8...`；manifest 与 fresh clone 已验证；
 - Kunshan shared checkout：HEAD `94f8fcdd...`，20 条 dirty/untracked 状态；不得覆盖；
 - Kunshan localized branch：`192ee700372e2a34a5a6848e3655ea5caa1d7bdc` 修改共享模块，当前未兼容合入；
 - 其他 stochastic ref：已判定与本项目无交集时可记录后原样接受；
