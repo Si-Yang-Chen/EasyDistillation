@@ -43,16 +43,16 @@
       "sha256": "f8205f5211fbe4a3cbede357cec79ffa1f340c4468ab1e33896b51853f7a714b"
     },
     {
-      "bytes": 3319,
+      "bytes": 3996,
       "git_state": "clean",
       "path": "AGENTS.md",
-      "sha256": "c5fe97e024282b316dfb50b87bb979afe84c0ba785345ba7e8c2adabc907cfdd"
+      "sha256": "f15c48a20c2dd523f8eaeb4191f4d540fc2eecc1d8f77138530e6dd89dc8a67f"
     },
     {
-      "bytes": 7425,
+      "bytes": 7560,
       "git_state": "clean",
       "path": "DOCUMENTATION_INDEX.md",
-      "sha256": "f0d6d8df9b6c2be40866405fac8836e46fad3c4d26c8016dfd4904eb124fadba"
+      "sha256": "54ea3ce86a29ae95a327f6f9bbc2126f12edff8dc3e5e66dfcfd4360d2bd5733"
     },
     {
       "bytes": 3377,
@@ -85,10 +85,10 @@
       "sha256": "d6d2245b185b3dfa5903e9f8ffe16916c627a5be10bcc2637936546ff970081f"
     },
     {
-      "bytes": 4400,
+      "bytes": 4632,
       "git_state": "clean",
       "path": "TASKBOARD.md",
-      "sha256": "063a21de5106dc3c536d63021773a1fada203bfa18c0c2abbb7ac39ea4a90695"
+      "sha256": "b32483b94b2472a36202a02b2f29d7f2960f67553d4d5b8ab3be7504d987584d"
     },
     {
       "bytes": 2509,
@@ -101,6 +101,12 @@
       "git_state": "clean",
       "path": "docs/archive/2026-09-03-kunshan-permanence.md",
       "sha256": "b2e95f69192a7e2d835d474b8f209aa424c8389d4250db706e908e60d2e98dcc"
+    },
+    {
+      "bytes": 4400,
+      "git_state": "clean",
+      "path": "docs/archive/taskboard/2026-09-04-j4xj4-ensemble-readiness.md",
+      "sha256": "063a21de5106dc3c536d63021773a1fada203bfa18c0c2abbb7ac39ea4a90695"
     },
     {
       "bytes": 3320,
@@ -121,16 +127,16 @@
       "sha256": "8a8f88bb7f2df9966d4de7de14d8f1174a761e8940988fe48fd93ab8aafc2b6a"
     },
     {
-      "bytes": 2882,
+      "bytes": 2944,
       "git_state": "clean",
       "path": "docs/delivery-files.list",
-      "sha256": "afce815847e78f18494ec7dfd8c1621a28f0b213bf492e08bba43f901804fad2"
+      "sha256": "e228fa0c17680075a11b237c804209651156fb51517aea13d81b1ce854ef4b9f"
     },
     {
-      "bytes": 684,
+      "bytes": 746,
       "git_state": "clean",
       "path": "docs/handover-files.list",
-      "sha256": "7809003bef2224b77dcdb3cafc732e1d808a5f626797d56a25991e99e22b0b7b"
+      "sha256": "8fdcdc175e14f88003836d1a1bc4200cbcde5e92c7dbb523261d6c72afc0f172"
     },
     {
       "bytes": 8505,
@@ -421,7 +427,7 @@
       "sha256": "49d634eda5eb5e2c3963dc42e63182c06c3a6b4e94b3fe37a44465f1550e33a1"
     }
   ],
-  "generated_utc": "2026-09-03T18:00:58.938565+00:00",
+  "generated_utc": "2026-09-03T18:21:47.259483+00:00",
   "git": {
     "accepted_external_refs": {
       "origin/feature-stochastic": "f6ba3fb024ae254688d8ad778cdea4766ec669c4",
@@ -429,16 +435,16 @@
     },
     "branch": "feature/wilson-current-j4",
     "dirty": true,
-    "head": "9f941485c4f2e1b147eab3d55c9bfce77f5f3150",
+    "head": "1fb4fb929dfc37122eeb2f940bee84e4b6168bbc",
     "origin_url": "git@github.com:Si-Yang-Chen/EasyDistillation.git"
   },
-  "manifest_identity": "4f09b09e18f8d06a40c9feb8e2c893e50019f120cd1ebd6b0be9f870c920eb10",
+  "manifest_identity": "465b29617b5b75916fdc99de2850f5f004f564a848fea4c9d8a9a5ec05853641",
   "project_root_at_generation": "C:/Users/Lenovo/Project/lattice-flow-restart",
   "release": {
     "published_git_ref": {
       "contains_recorded_head": true,
       "name": "origin/feature/wilson-current-j4",
-      "observed_commit": "9f941485c4f2e1b147eab3d55c9bfce77f5f3150"
+      "observed_commit": "1fb4fb929dfc37122eeb2f940bee84e4b6168bbc"
     },
     "release_prerequisites_ready_at_build": false,
     "retention_decision": {
