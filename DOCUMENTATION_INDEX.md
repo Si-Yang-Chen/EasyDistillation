@@ -11,8 +11,10 @@
 - [Current 工作交接](HANDOVER.md) - 当前完成度、真实证据、两条工作线和下一步
 - [重启操作手册](RESTART.md) - remote/multi-agent preflight、本地验证和 Kunshan 恢复步骤
 - [交付内容清单](INVENTORY.md) - 精确 staging 候选、共享文件、排除项和外部数据边界
-- [实时任务板](TASKBOARD.md) - 当前任务、blocker 和验收快照
-- [永久化与上线规范](docs/permanence-and-deployment.md) - commit、其他 agent 集成、部署 snapshot、数据/结果归档和恢复门禁
+- [实时任务板](TASKBOARD.md) - 当前阶段、blocker 和验收快照
+- [长期计划](PLAN.md) - 跨阶段目标和长期路线
+- [永久化与上线入口](docs/permanence-and-deployment.md) - 何时阅读归档以及当前永久化原则
+- [Kunshan/永久化归档](docs/archive/2026-09-03-kunshan-permanence.md) - 详细部署、数据、结果和恢复门禁
 - [交接文档 Manifest](docs/handover-manifest.json) - canonical 完整 delivery exact-byte SHA-256 清单；普通 verify 与 release-ready 是不同门禁
 
 ### API 与真实证据

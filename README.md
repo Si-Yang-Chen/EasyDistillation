@@ -1,59 +1,63 @@
 # EasyDistillation
 
-EasyDistillation is a Python framework for lattice QCD distillation calculations — integrating the generation of Laplacian eigenvectors, perambulators, elementals, and automatic quark diagram contraction with multi-backend support (CPU / GPU).
+EasyDistillation is a Python framework for lattice QCD distillation calculations with CPU/GPU backends, perambulators, elementals and quark-diagram contraction.
 
-## Features
+## Minimal Development Flow
 
-- **Multi-backend**: NumPy (CPU) or CuPy/PyQuda (GPU) via unified backend interface
-- **Lazy loading & memory mapping**: Efficient FileData system for large lattice datasets
-- **Full propagator support**: V2V (Perambulator), P2V, V2P, P2P with time-sliced file formats
-- **Automatic contraction**: opt_einsum-optimized quark diagram contraction with symbolic SymPy-based simplification
-- **Symmetry analysis**: Built-in group theory support for hadron operator construction
-- **High-mode projection**: Localized Blending method for point-source sampling
-- **MPI-ready**: Distributed parallelism support
+```bash
+cd C:/Users/Lenovo/Project/lattice-flow-restart
+python -m pytest -p no:cacheprovider -q \
+  tests/test_current.py \
+  tests/test_current_consumption.py \
+  tests/test_temporal_current_elemental.py \
+  tests/test_current_v2v_persistence.py \
+  tests/test_current_v2v_contraction.py
+python -m ruff format --check \
+  lattice/current_elemental.py \
+  lattice/generator/elemental.py \
+  lattice/generator/sparsened_point.py \
+  lattice/insertion/current.py \
+  lattice/insertion/gauge_link.py \
+  lattice/quark_diagram.py \
+  tests/test_current_v2v_contraction.py \
+  experiments/directed-current-v2v/contract_existing_vsv_pair.py
+python -m ruff check --no-cache \
+  lattice/current_elemental.py \
+  lattice/generator/elemental.py \
+  lattice/generator/sparsened_point.py \
+  lattice/insertion/current.py \
+  lattice/insertion/gauge_link.py \
+  lattice/quark_diagram.py \
+  tests/test_current_v2v_contraction.py \
+  experiments/directed-current-v2v/contract_existing_vsv_pair.py
+git diff --check
+```
 
-## Quick Start
+Run the deterministic synthetic precheck when changing current conservation logic:
 
-See [Quick Reference](QUICK_REFERENCE.md) for a getting-started guide, API cheat sheet, and common operations.
+```bash
+PYTHONDONTWRITEBYTECODE=1 python test/current_conservation_cpu_precheck.py
+```
+
+Read [`AGENTS.md`](AGENTS.md) before Kunshan work, [`TASKBOARD.md`](TASKBOARD.md) for the current phase, and [`PLAN.md`](PLAN.md) for long-term work. The user handoff and archived deployment rules are indexed in [`DOCUMENTATION_INDEX.md`](DOCUMENTATION_INDEX.md).
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Wilson Current Handover](HANDOVER.md) | Current status, evidence levels, workstreams, and next actions |
-| [Restart Runbook](RESTART.md) | Multi-agent preflight, local verification, and safe Kunshan recovery |
-| [Delivery Inventory](INVENTORY.md) | Scoped delivery allowlist, exclusions, and external-data boundary |
-| [Permanence & Deployment](docs/permanence-and-deployment.md) | Commit, integration, deployment snapshot, result, and recovery gates |
-| [Current Taskboard](TASKBOARD.md) | Live task state, blockers, and acceptance snapshot |
-| [Quick Reference](QUICK_REFERENCE.md) | Fast lookup for common operations |
-| [Project Architecture](PROJECT_ARCHITECTURE.md) | Full architecture and development guide |
-| [Data Shapes](doc/README.md) | Data type shapes and file naming conventions |
-| [Propagator Theory & Usage](doc/propagator_theory_and_usage.md) | Propagator types, memory estimates, loading examples |
-| [Distillation Workflow](docs/DISTILLATION_WORKFLOW.md) | Traditional distillation step-by-step workflow |
-| [Localized Blending](doc/localized_blending/localized_blending.md) | Theory, implementation, and appendix |
-| [FileData Deep Dive](FILEDATA_DETAILED.md) | File I/O architecture and performance analysis |
-| [Document Index](DOCUMENTATION_INDEX.md) | Full documentation index by scenario |
-| [Vector Current Workflow](WORKFLOW_ANALYSIS.md) | Localized Blending two-point contraction workflow |
+- [Current handover](HANDOVER.md)
+- [Current taskboard](TASKBOARD.md)
+- [Long-term plan](PLAN.md)
+- [Restart guide](RESTART.md)
+- [Delivery inventory](INVENTORY.md)
+- [Current API](docs/current-api.md)
+- [Kunshan data map](docs/kunshan-easydistillation-data-map.md)
+- [Documentation index](DOCUMENTATION_INDEX.md)
 
 ## Requirements
 
-- Python ≥ 3.9
-- NumPy, SciPy
-- [opt_einsum](https://github.com/dgasmith/opt_einsum)
-- [SymPy](https://www.sympy.org/) (for symbolic simplification)
-
-**Optional** (GPU acceleration):
-- [CuPy](https://cupy.dev/)
-- [PyQuda](https://github.com/IHEP-LQCD/PyQuda) + QUDA
-
-## Running Tests
-
-```bash
-pytest tests/ -v                 # All tests
-pytest tests/ -m "not gpu"       # Skip GPU tests
-pytest tests/test_perambulator.py -v  # Specific test
-```
+- Python >= 3.9
+- NumPy, SciPy, opt_einsum and SymPy
+- Optional: CuPy, PyQuda and QUDA for DCU execution
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+MIT; see [LICENSE](LICENSE).

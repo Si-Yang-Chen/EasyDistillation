@@ -1,55 +1,60 @@
-# Taskboard
+# 当前阶段任务板
 
 - project_id: `lattice-flow-restart`
-- display_name: `EasyDistillation Wilson conserved-current / Current×Current`
-- updated_at: `2026-09-03T06:45:00+08:00`
-- current_task: `workspace 可移交快照已整理；永久 release 等待用户授权 commit/push 和 retention 决策`
-- next_action: `用户处理永久化门禁时，工程主线恢复 pair-smoke CLI；每次交付文件变化后重建 manifest`
-- blockers: `workspace 文档可移交无工程 blocker；永久 release 被未授权 commit/push 与 pending retention hard gate 阻止；H–J–H 另有物理合同 blocker`
+- phase: `J4×J4 ensemble readiness and safe Kunshan integration`
+- updated_at: `2026-09-03T08:00:00+08:00`
+- current_task: `文档收敛完成；推进 full-size 双 point-split endpoint/source coverage 和 8-cfg production contract`
+- next_action: `重新核对 remote/Kunshan shared checkout，完成 coverage/cost audit，再决定是否提交 8-cfg production`
+- blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
+- long_term_plan: `PLAN.md`
 
-## Tasks
+## 当前任务
 
 | ID | Status | Description | Evidence | Next action |
 | --- | --- | --- | --- | --- |
-| CUR-01 | done | CurrentTerm/schema、Wilson conserved forward/backward terms、spin 和 endpoint policy | `lattice/insertion/current.py`; Current tests | 保持 API/schema 稳定 |
-| CUR-02 | done | 八方向 directed one-link V2V raw generation | `calc_directed_current_raw`; temporal tests | 在共享 elemental 基线上做最终兼容审查 |
-| ART-01 | done | directed-current content-addressed artifact persistence 与 source hashes | `lattice/current_elemental.py`; persistence tests | 永久化到 Git commit |
-| CON-01 | done | 单 current point-split term-wise existing-VSV contraction | cfg10000 canonical v3 smoke | 保留 canonical evidence |
-| CON-02 | done | 双 current temporal V2V term-pair kernel 与 pair-smoke CLI | kernel focused `6 passed`; pair CLI subprocess tests passed | cfg10000 real pair smoke (KUN-01) |
-| KUN-01 | done | cfg10000 `Ne=1` real `J4×J4` pair smoke | result `a1cb967c…cf21d`; manifest identity `3be081ae…4fbc`; `docs/kunshan-current-vsv-pair-smoke.md` | 保持 canonical；后续 ensemble 另立 PROD-01 |
-| INT-01 | pending | 与 localized-blending 共享模块兼容集成 | branch `192ee700372e2a34a5a6848e3655ea5caa1d7bdc` 修改共享代码 | 三方 diff、保留双方语义、跑兼容测试 |
-| PROD-01 | pending | 8-cfg Wilson `J4×J4` input/result/resource contract | VSV/PSV/PSP/overlap inputs 完整 | endpoint coverage 与成本评估，用户确认资源 |
-| PROD-02 | pending | 8-cfg Slurm production、monitor 和结果审计 | 尚无新 jobs | 每 attempt 新目录；原子 result + DONE |
-| PHY-01 | blocked-physics | rho charge normalization / WT H–J–H measurement | readiness v4 `ready=false` | 获取批准 measurement contract 和 C3 |
-| PERM-01 | workspace-complete | 用户交接文档与永久化规范 | reviewer P1/P2 已转为 hard gates；manifest+monitor focused `19 passed` | 普通 manifest verify；永久 release 交给 PERM-02/RET-01 |
-| PERM-02 | awaiting-user-authorization | 精确 staging、review、commit、push | 当前 scoped files 仍 modified/untracked | 用户授权后执行 reviewed allowlist |
-| RET-01 | awaiting-user-decision | 大型 Kunshan 数据第二副本和 retention policy | `docs/data-retention-decision.json` 为 `pending`，release-ready hard gate 必须失败 | 用户选择 `approved` secondary copy 或签署 `not-required` single-copy 风险 |
+| ENS-01 | in-progress | 8-cfg localized VSV/PSV/PSP/overlap 输入 coverage 与 endpoint 兼容性审计 | `docs/kunshan-easydistillation-data-map.md`；现有精确计数 | 确定双 `J4` 所需 source/time coverage 和内存成本 |
+| ENS-02 | pending | 8-cfg Wilson `J4×J4` production input/result contract | cfg10000 pair smoke 已通过；无 ensemble result | 生成新 manifest、资源估算、输出根和 job ledger |
+| ENS-03 | pending | 8-cfg Slurm production、持久 monitor 和结果审计 | 尚无新 production job | 资源确认后按批准流程提交，不伪装成测试 |
+| INT-01 | pending | 与 localized-blending 共享模块兼容集成 | Kunshan branch `192ee700...` 触及共享路径 | 重新 diff 双方 ref，保留双方语义并跑兼容测试 |
+| PUSH-01 | in-progress | 专用 branch remote 发布和 fresh-clone 验证 | 本地 commits 已完成；用户已授权后续 push | 文档提交后重新 fetch、push、fresh clone 验证 |
+| RET-01 | awaiting-user-decision | 大型数据 retention | `docs/data-retention-decision.json` 为 `pending` | 用户选择 `approved` secondary copy 或签署 `not-required` |
+| PHY-01 | blocked-by-authority | rho charge/WT H–J–H measurement | readiness v4 `ready=false` | 获得 approved measurement contract 和 C3 定义 |
 
-## Acceptance Snapshot
+## 已完成基线
 
-- pair kernel focused tests: `6 passed`；
-- pre-pair full related suite: `166 passed, 1 skipped`；加入 pair kernel 后尚待重跑；
-- cfg10000 single-current real artifact smoke: passed；
-- cfg10000 real dual-current pair smoke: passed（result `a1cb967c…`, manifest identity `3be081ae…`, login-readonly record `7d422baf…`）；
-- readiness v4: `files_verified=true`, `ready=false`；
-- handover manifest + persistent monitor focused tests: `19 passed`；manifest 子集 `14 passed`，覆盖 approved restore evidence、not-required single-copy 决策、ignored/directory/local-branch 拒绝和 bare-remote/fresh-clone release 模拟；
-- staging/commit/push: not performed；reviewer 的永久交付 verdict 因此仍为 BLOCKED；
-- retention: `pending`，`verify --require-release-ready` 必须失败；
-- remote snapshot (`2026-09-03T02:54:52+08:00`): local/Kunshan HEAD `94f8fcdd67defdd14ebc4ff2a1a64b26b36fb28f`, `origin/master=1da08f0a3eb3e2938cb89149a04eb1433de5b0a8`, `origin/feature-stochastic=f6ba3fb024ae254688d8ad778cdea4766ec669c4` and is an ancestor of local HEAD;
-- shared-change snapshot: Kunshan localized branch `192ee700372e2a34a5a6848e3655ea5caa1d7bdc` touches shared modules and remains unintegrated;
-- Kunshan queue snapshot: array job `120729358_[0-1]`, name `lb-nz-spinfix-`, state `PENDING (Priority)`; belongs to another workflow until ownership is verified, so this project must not alter it.
+- Wilson Current terms、八方向 directed raw、artifact persistence 和单流/双流 V2V kernel 已实现。
+- pair-smoke CLI 已绑定 source manifest、execution record 和依赖文件 bytes。
+- cfg10000 `Ne=1` 真实 `J4×J4` pair smoke 已通过；证据见 `docs/kunshan-current-vsv-pair-smoke.md`。
+- 本地永久化已形成专用 branch 的分组 commits；tracked worktree 在文档收敛前干净。
+- source-manifest 集成和文档收敛后相关测试通过 `195 passed, 1 skipped`；Ruff、format、precheck 和 diff check 通过。
 
-## Status Vocabulary
+## 最近动态 snapshot
 
-- `done`: 代码和对应层级证据已完成；
-- `in-progress`: 当前正在实施；
-- `paused-at-checkpoint`: 已保存通过的中间实现，当前让位于明确的用户优先事项；
-- `workspace-complete`: 当前工作区和 exact-byte manifest 可恢复，但不表示已 commit/push 的永久发布；
-- `pending`: 前置工作已知，可继续执行；
-- `blocked-physics`: 缺权威物理定义，不能由代码自行决定；
-- `awaiting-user-authorization`: 操作受明确用户授权门禁；
-- `awaiting-user-decision`: 需要用户选择策略/资源，而非技术失败。
+以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
-## Output Policy
+- local branch/HEAD：`feature/wilson-current-j4` / `5d91ca6...`（本轮文档收敛待提交）；
+- 最近目标 remote：专用 `wilson-current-j4` branch 尚未确认存在；push 已获持续授权；
+- Kunshan shared checkout：HEAD `94f8fcd...`，存在 dirty/untracked 变化；不得覆盖；
+- Kunshan localized branch：`192ee700...` 修改共享模块，当前未兼容合入；
+- 其他 stochastic ref：已判定与本项目无交集时可记录后原样接受；
+- 活动作业：上次观察到 `120729358_[0-1]` 为其他 workflow 的 pending job，不能操作。
 
-只把需要报告给用户的小型最终摘要放入 `final-results/`；临时测试、缓存、日志、中间 arrays 和大型格点数据不要放入该目录。任何 `final-results/` 文件进入 Git 前仍需逐项 ownership/size/hash 审核。
+## 当前阶段验收
+
+- [x] cfg10000 `J4×J4` artifact smoke：通过；
+- [x] 本地 delivery allowlist：逐文件检查通过；
+- [x] source-manifest/执行记录绑定：pair CLI 测试覆盖；
+- [x] source-manifest 集成和文档收敛后完整相关测试；
+- [ ] shared checkout/branch 兼容 preflight；
+- [ ] 8-cfg endpoint/source coverage 与资源契约；
+- [ ] 8-cfg production result + monitor；
+- [ ] remote push + fresh-clone verification；（push 已获持续授权）
+- [ ] retention decision resolution；
+- [ ] H–J–H 物理授权。
+
+## 规则
+
+- 当前任务板只记录当前阶段；长期路线放在 `PLAN.md`。
+- 动态 HEAD、dirty、Job ID 和测试数字只放这里或对应 evidence，不写入稳定 ledger。
+- 其他 agent 无交集改动记录后直接接受；共享 API/schema/data/runtime 改动必须兼容审查。
+- 不覆盖共享 Kunshan checkout，不删除其他 agent 结果，不因本地缺数据停止查找。
