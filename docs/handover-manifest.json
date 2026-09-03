@@ -37,46 +37,64 @@
       "sha256": "f8205f5211fbe4a3cbede357cec79ffa1f340c4468ab1e33896b51853f7a714b"
     },
     {
-      "bytes": 6471,
+      "bytes": 3319,
       "git_state": "clean",
       "path": "AGENTS.md",
-      "sha256": "95d4667c2d21df1d28bab71e7549bf1cee786c447b8183874192349967a9c9cf"
+      "sha256": "c5fe97e024282b316dfb50b87bb979afe84c0ba785345ba7e8c2adabc907cfdd"
     },
     {
-      "bytes": 7281,
+      "bytes": 7425,
       "git_state": "clean",
       "path": "DOCUMENTATION_INDEX.md",
-      "sha256": "5cb23d8141b9ee93bf65cbb023cc5ac9a5f71dff9e00a5bf604bddc3ff08b2a3"
+      "sha256": "f0d6d8df9b6c2be40866405fac8836e46fad3c4d26c8016dfd4904eb124fadba"
     },
     {
-      "bytes": 7859,
+      "bytes": 3377,
       "git_state": "clean",
       "path": "HANDOVER.md",
-      "sha256": "116cbf817f8a591afb8ec681e77cb55381c4c3111b353a95c85ea72d1df9e253"
+      "sha256": "703778d53ce4d2ae722f71bd061cfc3b5e9ac75931f9095e19aa3429b4fcea51"
     },
     {
-      "bytes": 12314,
+      "bytes": 3708,
       "git_state": "clean",
       "path": "INVENTORY.md",
-      "sha256": "3f53e927a294e1e75b54fae8c069e33cf24eab3a622df63bdd81f26876bd0702"
+      "sha256": "d3c883af041ffbf11b556deac71d1188bf5ea9199ee8613c5b5568c1f72f0cf3"
     },
     {
-      "bytes": 3074,
+      "bytes": 2503,
+      "git_state": "clean",
+      "path": "PLAN.md",
+      "sha256": "d4f45c120c2039aee2c2c11bc9c6b3b3cf89b32cf2cc14c73c94117b6cc09af8"
+    },
+    {
+      "bytes": 2150,
       "git_state": "clean",
       "path": "README.md",
-      "sha256": "eb9c56d227839ebf74a3ee6dc77b54b7a16d7810bf4acc4043bc1a4d030a695d"
+      "sha256": "163647cc76d1e2b1d59fc1b337aefc4fcd405c1582bfe0808f4a90b12dd24778"
     },
     {
-      "bytes": 11491,
+      "bytes": 4016,
       "git_state": "clean",
       "path": "RESTART.md",
-      "sha256": "a48cd533d795d6cb32cd32127e164f924c771a3cbb2516e0e1965e08d97e2727"
+      "sha256": "d6d2245b185b3dfa5903e9f8ffe16916c627a5be10bcc2637936546ff970081f"
     },
     {
-      "bytes": 5417,
+      "bytes": 4258,
       "git_state": "clean",
       "path": "TASKBOARD.md",
-      "sha256": "0cd0c71999359d323ebf749f1c21c40e556f614e3a7e4804fbb48c0bb53f2cdb"
+      "sha256": "5078caa4447a1919822362e001e2ccc6b15cc382707ccc7e2b34c8784b23bd44"
+    },
+    {
+      "bytes": 2509,
+      "git_state": "clean",
+      "path": "docs/archive/2026-09-03-current-facts.md",
+      "sha256": "e00d51e4676049a168edb90ce1b374defb515e9308284834d10110cb9eed7a81"
+    },
+    {
+      "bytes": 5086,
+      "git_state": "clean",
+      "path": "docs/archive/2026-09-03-kunshan-permanence.md",
+      "sha256": "b2e95f69192a7e2d835d474b8f209aa424c8389d4250db706e908e60d2e98dcc"
     },
     {
       "bytes": 3320,
@@ -97,16 +115,16 @@
       "sha256": "8a8f88bb7f2df9966d4de7de14d8f1174a761e8940988fe48fd93ab8aafc2b6a"
     },
     {
-      "bytes": 2772,
+      "bytes": 2867,
       "git_state": "clean",
       "path": "docs/delivery-files.list",
-      "sha256": "eff668cc2f7bbf404f018f393ad8ea08a08236869c7745d92763019e5c625084"
+      "sha256": "944f580fbd06363ea98aee348a3f94333ed423a1d6913a791caadfc6a2db3301"
     },
     {
-      "bytes": 589,
+      "bytes": 684,
       "git_state": "clean",
       "path": "docs/handover-files.list",
-      "sha256": "967e363062baf0ec27e96c53bd6a5fef6e20f987e08fc518183726ad0ea64ac9"
+      "sha256": "7809003bef2224b77dcdb3cafc732e1d808a5f626797d56a25991e99e22b0b7b"
     },
     {
       "bytes": 8505,
@@ -139,16 +157,16 @@
       "sha256": "918d4830e90ec05342c26b163d853303ec0c08143a8dbd16c26bafc169bfa3aa"
     },
     {
-      "bytes": 5589,
+      "bytes": 1387,
       "git_state": "clean",
       "path": "docs/ledger/facts.md",
-      "sha256": "2fc441e85bd46b1009813c4e5b66cff11cb30007ab9875381d59b2b7f8458c49"
+      "sha256": "fb58f30568fa6b6e74c98e3556a4a4d4d8a8438a5dcc3b654c9a93dc3c86aeec"
     },
     {
-      "bytes": 13742,
+      "bytes": 2021,
       "git_state": "clean",
       "path": "docs/permanence-and-deployment.md",
-      "sha256": "6b1c2e6a6a981868c3546dea01006f741afa4581d052c775129931f11816fa5d"
+      "sha256": "c6be1913cedd4e48bfbc3cd4aec6d592c07ce6c9786a333247f2e5e3d897c900"
     },
     {
       "bytes": 6630,
@@ -397,7 +415,7 @@
       "sha256": "49d634eda5eb5e2c3963dc42e63182c06c3a6b4e94b3fe37a44465f1550e33a1"
     }
   ],
-  "generated_utc": "2026-09-02T22:55:30.401923+00:00",
+  "generated_utc": "2026-09-03T16:57:21.815266+00:00",
   "git": {
     "accepted_external_refs": {
       "origin/feature-stochastic": "f6ba3fb024ae254688d8ad778cdea4766ec669c4",
@@ -405,10 +423,10 @@
     },
     "branch": "feature/wilson-current-j4",
     "dirty": true,
-    "head": "532fc59c39b92424b58e67449507a5f249bbbd44",
+    "head": "14725ba81db46206ba78995bd17019fb39cee2cc",
     "origin_url": "git@github.com:Si-Yang-Chen/EasyDistillation.git"
   },
-  "manifest_identity": "042861f4713663b21f68c6d748d96d1f3378e691ac4dbae6793544bf5629d160",
+  "manifest_identity": "3ddc4a83ba157705c645efcae738f36f569c1815b19847a70c9d471f3cfa30c7",
   "project_root_at_generation": "C:/Users/Lenovo/Project/lattice-flow-restart",
   "release": {
     "published_git_ref": null,
