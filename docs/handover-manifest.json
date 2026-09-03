@@ -85,10 +85,10 @@
       "sha256": "d6d2245b185b3dfa5903e9f8ffe16916c627a5be10bcc2637936546ff970081f"
     },
     {
-      "bytes": 4632,
+      "bytes": 5213,
       "git_state": "clean",
       "path": "TASKBOARD.md",
-      "sha256": "b32483b94b2472a36202a02b2f29d7f2960f67553d4d5b8ab3be7504d987584d"
+      "sha256": "183568813222c564d99110810b859a9b3e1339c5ba45b578deeccf31dcdddefc"
     },
     {
       "bytes": 2509,
@@ -115,10 +115,10 @@
       "sha256": "e11de1ad293c4985c05ffa2f697b44d2bf78003cb7632fb491c101f86a73018c"
     },
     {
-      "bytes": 14377,
+      "bytes": 14915,
       "git_state": "clean",
       "path": "docs/current-api.md",
-      "sha256": "5460f8fa8af288eb5c08ca95a2bff0c8dab1744311ae7bbd96ad72c8158cb620"
+      "sha256": "a3a0fbfc991d6746a34e4b59267c0b3b57cfed7d3d07979e43d0910191078f20"
     },
     {
       "bytes": 587,
@@ -127,16 +127,16 @@
       "sha256": "8a8f88bb7f2df9966d4de7de14d8f1174a761e8940988fe48fd93ab8aafc2b6a"
     },
     {
-      "bytes": 2944,
+      "bytes": 3729,
       "git_state": "clean",
       "path": "docs/delivery-files.list",
-      "sha256": "e228fa0c17680075a11b237c804209651156fb51517aea13d81b1ce854ef4b9f"
+      "sha256": "52da30318a226556d3cb83022377ba3dffcb2258ddca35979dcdeed884ea0a72"
     },
     {
-      "bytes": 746,
+      "bytes": 1574,
       "git_state": "clean",
       "path": "docs/handover-files.list",
-      "sha256": "8fdcdc175e14f88003836d1a1bc4200cbcde5e92c7dbb523261d6c72afc0f172"
+      "sha256": "39dafbf91e9f623f25c6de07d46274dc8f3d0a74eef18d5eb1fd7d1837614a53"
     },
     {
       "bytes": 8505,
@@ -271,16 +271,28 @@
       "sha256": "99490d01a6b56c2e09e23f223c0ab8efd09aa8b4e71b27d724e61c26053f2e70"
     },
     {
-      "bytes": 5634,
+      "bytes": 6576,
       "git_state": "clean",
       "path": "experiments/directed-current-v2v/README.md",
-      "sha256": "88ff866a2c5637649841ebfb76b183b8cf369998854c1f5f0a4c66d9eebaea79"
+      "sha256": "1244a980c4453f4db103dd81a8b2b66305b22cf0aaeadf7441b177a2921e1dc0"
+    },
+    {
+      "bytes": 18396,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/audit_fullsize_coverage.py",
+      "sha256": "b996c35e49d835f998286b3e4cb167bab5bf63d2bae0e6c76279ce79751d04e9"
     },
     {
       "bytes": 5085,
       "git_state": "clean",
       "path": "experiments/directed-current-v2v/build_vsv_timeslice_manifest.py",
       "sha256": "ee1ba4ced917612840007a127bfd71ab06bcf1f8485b883f0ed7e8d9f988a8a1"
+    },
+    {
+      "bytes": 9153,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/collect_fulltime_vsv_pair_ensemble.py",
+      "sha256": "d1aa3f130361754454eca79c001d70d3d009ca0ff7aac447d1be267538a3ab44"
     },
     {
       "bytes": 37465,
@@ -295,16 +307,70 @@
       "sha256": "8b02328be74973c54c1d00d14264f63bb7da6ba81923733c74452bfb83506ea9"
     },
     {
+      "bytes": 25600,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/contract_fulltime_vsv_pair.py",
+      "sha256": "2dac6ff078f071103777c450a53218288adeb57b3636d74f759b8e1ba6490ff9"
+    },
+    {
+      "bytes": 1672,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/fulltime-production-contract.template.json",
+      "sha256": "a51471d0221147eb2cd084096e248c5d6679d712ea5adec682a303f0a4f9a875"
+    },
+    {
       "bytes": 8021,
       "git_state": "clean",
       "path": "experiments/directed-current-v2v/generate_current_artifact_dcu.py",
       "sha256": "aa1dce5dbd630f95257e1b50777dda57cde47a5b9200470010e1567ca3e8fff0"
     },
     {
+      "bytes": 4055,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/prepare_fulltime_execution_record.py",
+      "sha256": "a1482c85397b96b18c04efb4a77f3a807027d59799587d3b9db2062afdf1f7c7"
+    },
+    {
+      "bytes": 4647,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/run_fulltime_vsv_pair_ensemble.py",
+      "sha256": "64c359a7f357292f014827274ca63198d224c5808b9b01901ba7d8322f4ae556"
+    },
+    {
+      "bytes": 1640,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/submit_directed_current_artifact_array.slurm.template",
+      "sha256": "374f5dc5b5f8553a2fb5a07ba47409634143a2fcbe9f3824117ab7f757ef074c"
+    },
+    {
+      "bytes": 1892,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/submit_fulltime_vsv_pair_array.slurm.template",
+      "sha256": "17880ee732bc5332b7bc748322e8faba1ec202d1a1f75081617f1fe20748e0b0"
+    },
+    {
+      "bytes": 5560,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/test_audit_fullsize_coverage_cpu.py",
+      "sha256": "b0580b57ba6e87a291ce52cd0f6a632d0be99a037404df905fc1089f6aa51b68"
+    },
+    {
+      "bytes": 3409,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/test_collect_fulltime_vsv_pair_ensemble_cpu.py",
+      "sha256": "d4482251492d68dd88bcfe1adacc16f7dbfa3cd5c731f3c0ae104aa509d89fca"
+    },
+    {
       "bytes": 35565,
       "git_state": "clean",
       "path": "experiments/directed-current-v2v/test_contract_existing_vsv_cpu.py",
       "sha256": "4c7d4d0e4edacbbd44c45da5843f5e5a48cfcf33fe51b326b0862fab2a05c5ec"
+    },
+    {
+      "bytes": 3322,
+      "git_state": "clean",
+      "path": "experiments/directed-current-v2v/test_fulltime_vsv_pair_cpu.py",
+      "sha256": "99a09524f4dfe7791ff2d1911aa2bba8dc2131acfe6cfca684aec6034ce44540"
     },
     {
       "bytes": 1539,
@@ -325,10 +391,10 @@
       "sha256": "d5da3c17648bae263ee095088fa42ab889af648c55327614e497f8ce6a8c1f1b"
     },
     {
-      "bytes": 27571,
+      "bytes": 28030,
       "git_state": "clean",
       "path": "lattice/current_elemental.py",
-      "sha256": "10ccc2bd4542697638a4ec34446bfcb314145f7ee74e1192baa98dca20dc6fc0"
+      "sha256": "bc1e6fd033675bfc3092c78b81b45ca2d09e19357d6ea2d756e637b71d60169f"
     },
     {
       "bytes": 105624,
@@ -427,7 +493,7 @@
       "sha256": "49d634eda5eb5e2c3963dc42e63182c06c3a6b4e94b3fe37a44465f1550e33a1"
     }
   ],
-  "generated_utc": "2026-09-03T18:21:47.259483+00:00",
+  "generated_utc": "2026-09-03T20:11:50.207444+00:00",
   "git": {
     "accepted_external_refs": {
       "origin/feature-stochastic": "f6ba3fb024ae254688d8ad778cdea4766ec669c4",
@@ -435,16 +501,16 @@
     },
     "branch": "feature/wilson-current-j4",
     "dirty": true,
-    "head": "1fb4fb929dfc37122eeb2f940bee84e4b6168bbc",
+    "head": "0d5703cd394fef1f9a29b5b448fe2b5e95b7625e",
     "origin_url": "git@github.com:Si-Yang-Chen/EasyDistillation.git"
   },
-  "manifest_identity": "465b29617b5b75916fdc99de2850f5f004f564a848fea4c9d8a9a5ec05853641",
+  "manifest_identity": "d12498948875fefe4c15d0f15db81dcb2489b948c67fbed2d4d00efec4d020ff",
   "project_root_at_generation": "C:/Users/Lenovo/Project/lattice-flow-restart",
   "release": {
     "published_git_ref": {
       "contains_recorded_head": true,
       "name": "origin/feature/wilson-current-j4",
-      "observed_commit": "1fb4fb929dfc37122eeb2f940bee84e4b6168bbc"
+      "observed_commit": "0d5703cd394fef1f9a29b5b448fe2b5e95b7625e"
     },
     "release_prerequisites_ready_at_build": false,
     "retention_decision": {
