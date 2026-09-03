@@ -2,9 +2,9 @@
 
 - project_id: `lattice-flow-restart`
 - phase: `J4×J4 ensemble readiness and safe Kunshan integration`
-- updated_at: `2026-09-03T09:30:00+08:00`
-- current_task: `文档结构收敛已完成；准备专用 branch push 和 fresh-clone 验证`
-- next_action: `push 文档收敛后的专用 branch，fresh clone 验证；随后重新核对 Kunshan shared checkout`
+- updated_at: `2026-09-04T01:30:00+08:00`
+- current_task: `文档结构收敛和专用 branch 发布已完成；推进 full-size endpoint/source coverage audit`
+- next_action: `重新核对 Kunshan shared checkout，完成 coverage/cost audit，再准备 8-cfg production contract`
 - blockers: `Kunshan 共享模块需兼容核对；production 资源需确认；retention pending；H–J–H 仍缺物理合同`
 - long_term_plan: `PLAN.md`
 
@@ -16,7 +16,7 @@
 | ENS-02 | pending | 8-cfg Wilson `J4×J4` production input/result contract | cfg10000 pair smoke 已通过；无 ensemble result | 生成新 manifest、资源估算、输出根和 job ledger |
 | ENS-03 | pending | 8-cfg Slurm production、持久 monitor 和结果审计 | 尚无新 production job | 资源确认后按批准流程提交，不伪装成测试 |
 | INT-01 | pending | 与 localized-blending 共享模块兼容集成 | Kunshan branch `192ee700...` 触及共享路径 | 重新 diff 双方 ref，保留双方语义并跑兼容测试 |
-| PUSH-01 | in-progress | 专用 branch remote 发布和 fresh-clone 验证 | 本地文档收敛 commit 已完成；用户已持续授权 push | push 后运行 fresh clone manifest verify |
+| PUSH-01 | done | 专用 branch remote 发布和 fresh-clone 验证 | local/remote branch 已同步；fresh clone 的 70 项清单、manifest 和 import 验证通过 | release-ready 仍由 RET-01 独立控制 |
 | RET-01 | awaiting-user-decision | 大型数据 retention | `docs/data-retention-decision.json` 为 `pending` | 用户选择 `approved` secondary copy 或签署 `not-required` |
 | PHY-01 | blocked-by-authority | rho charge/WT H–J–H measurement | readiness v4 `ready=false` | 获得 approved measurement contract 和 C3 定义 |
 
@@ -26,18 +26,18 @@
 - pair-smoke CLI 已绑定 source manifest、execution record 和依赖文件 bytes。
 - cfg10000 `Ne=1` 真实 `J4×J4` pair smoke 已通过；证据见 `docs/kunshan-current-vsv-pair-smoke.md`。
 - 本地永久化已形成专用 branch 的分组 commits；tracked worktree 在文档收敛前干净。
-- source-manifest 集成和文档收敛后相关测试通过 `195 passed, 1 skipped`；Ruff、format、precheck 和 diff check 通过。
+- source-manifest 集成后的完整相关测试通过 `195 passed, 1 skipped`；文档收敛后的 manifest/monitor 测试 `20 passed`；Ruff、format、precheck 和 diff check 通过。
 
 ## 最近动态 snapshot
 
 以下只记录本阶段启动和部署判断所需的动态观察；下一次上线前必须重新获取：
 
-- local branch/HEAD：`feature/wilson-current-j4` / `14725ba...`（manifest 前最后本地提交；下一次提交后更新）；
-- 最近目标 remote：专用 `wilson-current-j4` branch 尚未确认存在；push 已获持续授权；
-- Kunshan shared checkout：HEAD `94f8fcd...`，存在 dirty/untracked 变化；不得覆盖；
-- Kunshan localized branch：`192ee700...` 修改共享模块，当前未兼容合入；
+- local/remote branch：`feature/wilson-current-j4` / `7c7e0d2...`，已完成 push；本轮 taskboard/manifest refresh 后待再次 push；
+- published ref：`origin/feature/wilson-current-j4`；manifest refresh 后仍需再次 push manifest commit；
+- Kunshan shared checkout：HEAD `94f8fcdd...`，20 条 dirty/untracked 状态；不得覆盖；
+- Kunshan localized branch：`192ee700372e2a34a5a6848e3655ea5caa1d7bdc` 修改共享模块，当前未兼容合入；
 - 其他 stochastic ref：已判定与本项目无交集时可记录后原样接受；
-- 活动作业：上次观察到 `120729358_[0-1]` 为其他 workflow 的 pending job，不能操作。
+- 活动作业：最近 preflight 时队列为空；此前 `120729358_[0-1]` 属于其他 workflow，不能操作。
 
 ## 当前阶段验收
 
@@ -48,7 +48,7 @@
 - [ ] shared checkout/branch 兼容 preflight；
 - [ ] 8-cfg endpoint/source coverage 与资源契约；
 - [ ] 8-cfg production result + monitor；
-- [ ] remote push + fresh-clone verification；（push 已获持续授权）
+- [x] remote push + fresh-clone source/manifest/import verification；release-ready 仍受 RET-01 约束；
 - [ ] retention decision resolution；
 - [ ] H–J–H 物理授权。
 
