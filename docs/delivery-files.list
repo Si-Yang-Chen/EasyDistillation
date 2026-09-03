@@ -3,6 +3,7 @@
 .cursor/skills/dcu-slurm-submit/monitor.md
 .cursor/skills/dcu-slurm-submit/portal-template.md
 .cursor/skills/dcu-slurm-submit/scripts/start_job_monitor.py
+.gitattributes
 .gitignore
 AGENTS.md
 DOCUMENTATION_INDEX.md

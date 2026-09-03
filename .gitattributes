@@ -9,6 +9,8 @@ tests/weak_field.bin filter=lfs diff=lfs merge=lfs -text
 tests/weak_field.lime filter=lfs diff=lfs merge=lfs -text
 
 # Keep source, contracts, manifests, and handover text byte-stable across hosts.
+.gitattributes text eol=lf
+.gitignore text eol=lf
 *.py text eol=lf
 *.md text eol=lf
 *.json text eol=lf
