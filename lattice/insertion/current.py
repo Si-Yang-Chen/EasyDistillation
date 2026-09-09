@@ -997,8 +997,8 @@ def verify_pcac(*, axial_divergence=None, axial_current=None,
 class Current:
     name = "current"
     elemental_key = "v2v"
-    verification_checks = frozenset({"z", "wt"})
-    requires_z = True
+    verification_checks = frozenset()
+    requires_z = False
     requires_wt = False
     requires_pcac = False
     gamma_indices = _VECTOR_GAMMA

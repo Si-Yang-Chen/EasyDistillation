@@ -1,5 +1,6 @@
 from copy import copy
 from math import factorial
+from numbers import Integral
 from typing import List, Tuple, Literal
 from time import perf_counter
 
@@ -13,6 +14,25 @@ from ..insertion.phase import MomentumPhase
 
 def comb(n, i):
     return factorial(n) // (factorial(i) * factorial(n - i))
+
+
+def _bounded_count(value, available, name):
+    """Normalize an optional count and reject ambiguous or out-of-range values."""
+    if isinstance(available, bool) or not isinstance(available, Integral):
+        raise TypeError(f"available {name} must be an integer")
+    available = int(available)
+    if available < 0:
+        raise ValueError(f"available {name} must be non-negative")
+    if value is None:
+        return available
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be an integer")
+    value = int(value)
+    if value < 0 or value > available:
+        raise ValueError(
+            f"{name} must satisfy 0 <= {name} <= available {name} ({available})"
+        )
+    return value
 
 
 class ElementalGenerator:
@@ -1049,10 +1069,10 @@ class CurrentElementalGenerator:
 
         Ne = eigenvector.Ne
         Np = point.Np
-        self.Ne = Ne
-        self.Np = Np
-        self.usedNe = usedNe if usedNe is not None else Ne
-        self.usedNp = usedNp if usedNp is not None else Np
+        self.Ne = int(Ne)
+        self.Np = int(Np)
+        self.usedNe = _bounded_count(usedNe, self.Ne, "usedNe")
+        self.usedNp = _bounded_count(usedNp, self.Np, "usedNp")
 
         # Data storage
         self._U = None
