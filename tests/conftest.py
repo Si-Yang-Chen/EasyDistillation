@@ -59,3 +59,11 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_gpu)
         if not mpi_available and item.get_closest_marker("mpi"):
             item.add_marker(skip_mpi)
+
+    # Some legacy GPU modules select CuPy at import time before discovering
+    # that the local driver is unavailable.  Restore the CPU backend for the
+    # remaining tests; otherwise ordinary gamma/insertion tests fail merely
+    # because collection order happened to import a skipped GPU module first.
+    if not gpu_available:
+        from lattice import set_backend
+        set_backend("numpy")

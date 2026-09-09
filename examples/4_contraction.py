@@ -1,7 +1,27 @@
 import os
 import sys
+from pathlib import Path
 import numpy as np
 import gvar as gv
+
+from lattice.result_provenance import (
+    build_manifest,
+    current_git_state,
+    finalize_result,
+    load_result_manifest,
+    prepare_result_directory,
+    sha256_file,
+)
+
+input_manifest_value = os.environ.get("LOCALIZED_INPUT_MANIFEST")
+result_root = os.environ.get("LOCALIZED_RESULT_ROOT")
+if not input_manifest_value or not result_root:
+    raise RuntimeError(
+        "LOCALIZED_INPUT_MANIFEST and LOCALIZED_RESULT_ROOT are required"
+    )
+input_manifest_path = Path(input_manifest_value).resolve()
+if not input_manifest_path.is_file():
+    raise RuntimeError(f"input manifest not found: {input_manifest_path}")
 
 
 from lattice import set_backend, get_backend
@@ -78,6 +98,9 @@ latt_size = [L, L, L, T]
 Lx, Ly, Lz, Lt = latt_size
 Np = 6**3
 Ne = 128
+USED_NE_SOURCE = 20
+USED_NE_SINK = 20
+USED_NP = 100
 grid_size = [1, 1, 1, 1]
 # init(grid_size, backend="cupy", resource_path="/public/home/siyangchen/.quda_cache")
 
@@ -202,30 +225,60 @@ log_gpu_memory("after init meson, current")
 # Create QuarkDiagram with vertex_list to support current vertex
 # vertex_list: [0, 1] means vertex[0] is normal (Meson), vertex[1] is current (Current)
 diagram = QuarkDiagram([[0, 1], [1, 0]], vertex_list=[0, 1], debug=True,usedNp=Np,L=L)
-exit()
 output = np.zeros((Lt, Lt), dtype=np.complex128)
 
-# compute_diagrams_multitime will auto-expand if diagram has expanded_diagrams
-elemental_dir = f"/public/home/siyangchen/qedinf/data/beta6.20_mu-0.2770_ms-0.2400_L{L}x{T}/05.correlator.current.nonlocal/"
-os.makedirs(elemental_dir, exist_ok=True)
+# Every production result requires an explicit external input manifest. The fixed
+# legacy directory is never treated as verified because it does not encode usedNe.
+repository_root = Path(__file__).resolve().parents[1]
+code_state = current_git_state(repository_root)
+shared_inputs = {
+    "input_manifest": sha256_file(input_manifest_path),
+    "entry_script": sha256_file(__file__),
+}
+run_parameters = {
+    "lattice_size": latt_size,
+    "total_ne": Ne,
+    "used_np": USED_NP,
+    "num_nabla": num_nabla,
+    "num_momentum": num_momentum,
+    "backend": backend.__name__,
+}
+
 combine_result = []
 log_gpu_memory("before loop")
 for cfg in dispatcher:
-    if os.path.exists(f"{elemental_dir}/{cfg}.npy"):
-        print(f"Skipping configuration {cfg} as output file already exists.")
-        combine_result.append(np.average(np.load(f"{elemental_dir}/{cfg}.npy"), axis=0))
-        continue
+    manifest = build_manifest(
+        output_root=result_root,
+        logical_test_id="current-nonlocal-correlator",
+        configuration=cfg,
+        source_ne=USED_NE_SOURCE,
+        sink_ne=USED_NE_SINK,
+        available_ne=Ne,
+        attempt=1,
+        code=code_state,
+        inputs=shared_inputs,
+        parameters=run_parameters,
+    )
+    result_directory = Path(manifest["result_directory"])
+    output_path = result_directory / "correlator.npy"
+    if result_directory.exists():
+        existing = load_result_manifest(result_directory)
+        if existing["verified"]:
+            combine_result.append(np.average(np.load(output_path), axis=0))
+            continue
+        raise RuntimeError(f"incomplete result directory exists: {result_directory}")
+    prepare_result_directory(manifest)
     print(f"Processing configuration: {cfg}")
     log_gpu_memory(f"before load cfg={cfg}")
     with prob, meson, current:
         print("load perambulators, meson, current")
-        prob.load(cfg, usedNe=20)
+        prob.load(cfg, usedNe=max(USED_NE_SOURCE, USED_NE_SINK))
         log_gpu_memory(f"after load perambulators cfg={cfg}")
         # PSV_perambulator.load(cfg)
-        meson.load(cfg, usedNe=20)
+        meson.load(cfg, usedNe=USED_NE_SINK)
         log_gpu_memory(f"after load meson cfg={cfg}")
         # meson2.load(cfg)
-        current.load(cfg, usedNe=20, usedNp=100)
+        current.load(cfg, usedNe=USED_NE_SOURCE, usedNp=USED_NP)
         log_gpu_memory(f"after load current cfg={cfg}")
         log_gpu_memory(f"after load cfg={cfg}")
         for t in range(Lt):
@@ -244,7 +297,8 @@ for cfg in dispatcher:
             output[t] = np.roll(backend.sum(result, axis=0).get(), -t, axis=0)
             if (t + 1) % 8 == 0:
                 log_gpu_memory(f"after time slice {t} cfg={cfg}")
-        np.save(f"{elemental_dir}/{cfg}.npy", output)
+        np.save(output_path, output)
+        finalize_result(manifest, {"correlator.npy": output_path})
         combine_result.append(np.average(output, axis=0))
         log_gpu_memory(f"after save cfg={cfg}")
     log_gpu_memory(f"after release cfg={cfg}")

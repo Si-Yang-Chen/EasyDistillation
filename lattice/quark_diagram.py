@@ -35,6 +35,145 @@ from .backend import get_backend, log_gpu_memory
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_extent(value, available, name):
+    if available is None:
+        raise ValueError(f"cannot determine available {name}")
+    if value is None:
+        value = available
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        raise TypeError(f"{name} must be an integer")
+    value = int(value)
+    available = int(available)
+    if value < 0 or value > available:
+        raise ValueError(f"{name}={value} is outside [0, {available}]")
+    return value
+
+
+def _available_extent(loader, data, attribute, axes):
+    declared = getattr(loader, attribute, None)
+    if isinstance(declared, bool) or not isinstance(declared, (int, np.integer)):
+        declared = None
+    shape = getattr(data, "shape", None)
+    dimensions = []
+    if shape is not None:
+        for axis in axes:
+            try:
+                dimensions.append(int(shape[axis]))
+            except (IndexError, TypeError):
+                pass
+    if declared is not None:
+        declared = int(declared)
+        if dimensions and any(dimension != declared for dimension in dimensions):
+            raise ValueError(
+                f"{attribute}={declared} conflicts with data shape {tuple(shape)}"
+            )
+        return declared
+    if not dimensions:
+        return None
+    if any(dimension != dimensions[0] for dimension in dimensions[1:]):
+        raise ValueError(f"inconsistent {attribute} dimensions in shape {tuple(shape)}")
+    return dimensions[0]
+
+
+def _metadata_shape(loader):
+    shape = getattr(loader, "shape", None)
+    if not isinstance(shape, (tuple, list)):
+        shape = getattr(getattr(loader, "elem", None), "shape", None)
+    return tuple(shape) if isinstance(shape, (tuple, list)) else ()
+
+
+def _loader_extents(loader, role):
+    if loader is None:
+        return None, None
+    declared_ne = getattr(loader, "Ne", None)
+    declared_np = getattr(loader, "Np", None)
+    ne = int(declared_ne) if isinstance(declared_ne, (int, np.integer)) and not isinstance(declared_ne, bool) else None
+    np_ = int(declared_np) if isinstance(declared_np, (int, np.integer)) and not isinstance(declared_np, bool) else None
+    shape = _metadata_shape(loader)
+    axes = {
+        "vsv": ((-2, -1), ()),
+        "vsp": ((-3,), (-2,)),
+        "psv": ((-1,), (-3,)),
+        "overlap": ((-3,), (-2,)),
+        "psp": ((), (-4, -2)),
+    }
+    ne_axes, np_axes = axes[role]
+    ne_dims = [int(shape[axis]) for axis in ne_axes if len(shape) >= abs(axis)]
+    np_dims = [int(shape[axis]) for axis in np_axes if len(shape) >= abs(axis)]
+    if ne_dims and any(value != ne_dims[0] for value in ne_dims[1:]):
+        raise ValueError(f"{role} has inconsistent Ne dimensions: {shape}")
+    if np_dims and any(value != np_dims[0] for value in np_dims[1:]):
+        raise ValueError(f"{role} has inconsistent Np dimensions: {shape}")
+    inferred_ne = ne_dims[0] if ne_dims else None
+    inferred_np = np_dims[0] if np_dims else None
+    if ne is not None and inferred_ne is not None and ne != inferred_ne:
+        raise ValueError(f"{role} Ne={ne} conflicts with shape {shape}")
+    if np_ is not None and inferred_np is not None and np_ != inferred_np:
+        raise ValueError(f"{role} Np={np_} conflicts with shape {shape}")
+    return ne if ne is not None else inferred_ne, np_ if np_ is not None else inferred_np
+
+
+def _data_signature(data):
+    version = getattr(data, "cache_version", getattr(data, "version", None))
+    file = getattr(data, "file", None)
+    file_state = None
+    if isinstance(file, str):
+        try:
+            stat = os.stat(file)
+            file_state = (file, stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            file_state = (file, None, None)
+    content_hash = None
+    if isinstance(data, np.ndarray):
+        contiguous = np.ascontiguousarray(data)
+        content_hash = hashlib.sha256(contiguous.view(np.uint8)).hexdigest()
+    return (
+        type(data).__module__,
+        type(data).__qualname__,
+        tuple(getattr(data, "shape", ()) or ()),
+        str(getattr(data, "dtype", None)),
+        version,
+        file_state,
+        content_hash,
+    )
+
+
+def _loader_signature(loader, key):
+    elem = getattr(loader, "elem", None)
+    shape = tuple(getattr(elem, "shape", ()) or ())
+    dtype = getattr(elem, "dtype", None)
+    prefix = getattr(loader, "prefix", None)
+    suffix = getattr(loader, "suffix", None)
+    resolved = None
+    file_state = None
+    if isinstance(prefix, str) and isinstance(suffix, str) and "?" not in suffix:
+        resolved = f"{prefix}{key}{suffix}"
+        try:
+            stat = os.stat(resolved)
+            file_state = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            file_state = None
+    return (
+        type(loader).__module__,
+        type(loader).__qualname__,
+        id(loader),
+        prefix,
+        suffix,
+        shape,
+        dtype,
+        getattr(loader, "Ne", None),
+        getattr(loader, "Np", None),
+        getattr(loader, "cache_version", getattr(loader, "version", None)),
+        resolved,
+        file_state,
+    )
+
+
+def _operator_signature(operator):
+    return hashlib.sha256(repr(getattr(operator, "parts", None)).encode()).hexdigest()
+
+
 # Fixed label sets for Einstein summation (opt_einsum)
 _SUB_VECTOR = "NOPQRSTUVWXYZ"  # Eigenvector/color indices
 _SUB_SPIN = "ABCDEFGHIJKLM"  # Spin indices
@@ -1429,10 +1568,12 @@ class Meson(Particle):
         # cache is shared among all instances of Meson.
         backend = get_backend()
         self.cache: Dict[int, backend.ndarray] = {}
+        self._cache_identity = None
 
     def _release_resources(self):
         self.elemental_data = None
         self.cache = {}
+        self._cache_identity = None
         gc.collect()
         backend = get_backend()
         if hasattr(backend, "get_default_memory_pool"):
@@ -1465,14 +1606,26 @@ class Meson(Particle):
         return str
 
     def load(self, key, usedNe: int = None):
-        self.usedNe = usedNe
-        if self.key != key:
+        elemental_data = self.elemental.load(key)
+        available_ne = _available_extent(
+            self.elemental, elemental_data, "Ne", (-2, -1)
+        )
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        identity = (
+            key,
+            normalized_ne,
+            _loader_signature(self.elemental, key),
+            _data_signature(elemental_data),
+            _operator_signature(self.operator),
+            bool(self.dagger),
+        )
+        if identity != self._cache_identity:
             self._release_resources()
             self.key = key
-            self.elemental_data = self.elemental.load(key)
-            backend = get_backend()
-            self.cache: Dict[int, backend.ndarray] = {}
+            self.usedNe = normalized_ne
+            self.elemental_data = elemental_data
             self._make_cache()
+            self._cache_identity = identity
 
     def _make_cache(self):
         from lattice.insertion.gamma import gamma
@@ -1584,6 +1737,7 @@ class Current(Meson):
         self.cache_p2v = {}
         self.cache_p2p = {}
         self.p2p_loaded = None
+        self._disp_reversal_map = None
 
     def release(self):
         self._release_resources()
@@ -1602,31 +1756,40 @@ class Current(Meson):
             pass
 
     def load(self, key, usedNe: int = None, usedNp: int = None):
-        if self.key != key:
-            self.key = key
-            # Load elemental data (v2v) as before
-            self.elemental_data = self.elemental.load(key)
-            self.Lt = self.elemental_data.shape[2]
-
-            # NO LONGER LOAD: eigenvector, point, gauge_field
-            # These are only needed if computing on-the-fly
-
-        # Set usedNe and usedNp with defaults from data loaders if not provided
-        self.usedNe = usedNe if usedNe is not None else self.elemental_data.shape[3]
-        # Get usedNp from p2v_data (since v2p now uses p2v via symmetry)
-        self.usedNp = (
-            usedNp
-            if usedNp is not None
-            else (self.p2v_data.Np if self.p2v_data is not None else None)
+        elemental_data = self.elemental.load(key)
+        available_ne = _available_extent(
+            self.elemental, elemental_data, "Ne", (-2, -1)
         )
-
-        backend = get_backend()
-        # Cache dictionaries for different propagator types
-        self.cache: Dict[int, backend.ndarray] = {}
-        self.cache_v2p: Dict[int, backend.ndarray] = {}
-        self.cache_p2v: Dict[int, backend.ndarray] = {}
-        self.cache_p2p: Dict[int, Dict[tuple, backend.ndarray] | None] = {}
-        self._make_cache()
+        if self.p2v_data is None:
+            raise ValueError("p2v_data must be provided for Current integration")
+        p2v_ne = getattr(self.p2v_data, "Ne", None)
+        if p2v_ne is not None and int(p2v_ne) != int(available_ne):
+            raise ValueError(
+                f"elemental Ne={available_ne} conflicts with p2v Ne={p2v_ne}"
+            )
+        available_np = getattr(self.p2v_data, "Np", None)
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        normalized_np = _normalize_extent(usedNp, available_np, "usedNp")
+        identity = (
+            key,
+            normalized_ne,
+            normalized_np,
+            _loader_signature(self.elemental, key),
+            _loader_signature(self.p2v_data, key),
+            _loader_signature(self.p2p_data, key) if self.p2p_data is not None else None,
+            _data_signature(elemental_data),
+            _operator_signature(self.operator),
+            bool(self.dagger),
+        )
+        if identity != self._cache_identity:
+            self._release_resources()
+            self.key = key
+            self.elemental_data = elemental_data
+            self.Lt = self.elemental_data.shape[2]
+            self.usedNe = normalized_ne
+            self.usedNp = normalized_np
+            self._make_cache()
+            self._cache_identity = identity
 
     def _build_displacement_reversal_map(self):
         """
@@ -1953,12 +2116,14 @@ class Propagator:
         self.cache = None
         self.cache_dagger = None
         self.cached_time = None
+        self._cache_identity = None
 
     def _release_resources(self):
         self.perambulator_data = None
         self.cache = None
         self.cache_dagger = None
         self.cached_time = None
+        self._cache_identity = None
         gc.collect()
         backend = get_backend()
         if hasattr(backend, "get_default_memory_pool"):
@@ -1984,11 +2149,23 @@ class Propagator:
             pass
 
     def load(self, key, usedNe: int = None):
-        if self.key != key:
-            # self._release_resources()
+        perambulator_data = self.perambulator.load(key)
+        available_ne = _available_extent(
+            self.perambulator, perambulator_data, "Ne", (-2, -1)
+        )
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        identity = (
+            key,
+            normalized_ne,
+            _loader_signature(self.perambulator, key),
+            _data_signature(perambulator_data),
+        )
+        if identity != self._cache_identity:
+            self._release_resources()
             self.key = key
-            self.usedNe = usedNe
-            self.perambulator_data = self.perambulator.load(key)
+            self.usedNe = normalized_ne
+            self.perambulator_data = perambulator_data
+            self._cache_identity = identity
 
     def get(self, t_source, t_sink):
         from lattice.insertion.gamma import gamma
@@ -2036,13 +2213,42 @@ class PropagatorLocal:
         self.key = None
         self.Lt = Lt
         self.cache = None
+        self._cache_identity = None
+
+    def _release_resources(self):
+        self.perambulator_data = None
+        self.cache = None
+        self._cache_identity = None
+
+    def release(self):
+        self._release_resources()
+        self.key = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.release()
 
     def load(self, key, usedNe: int = None):
-        if self.key != key:
+        perambulator_data = self.perambulator.load(key)
+        available_ne = _available_extent(
+            self.perambulator, perambulator_data, "Ne", (-2, -1)
+        )
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        identity = (
+            key,
+            normalized_ne,
+            _loader_signature(self.perambulator, key),
+            _data_signature(perambulator_data),
+        )
+        if identity != self._cache_identity:
+            self._release_resources()
             self.key = key
-            self.perambulator_data = self.perambulator.load(key)
-            self.usedNe = usedNe
+            self.perambulator_data = perambulator_data
+            self.usedNe = normalized_ne
             self._make_cache()
+            self._cache_identity = identity
 
     def _make_cache(self):
         self.cache = self.perambulator_data[0, :, :, :, : self.usedNe, : self.usedNe]
@@ -2143,6 +2349,65 @@ class PropagatorWithCurrent(Propagator):
         # Simple cache for single t_source, value shape: [Lt, Ns, Ns, Np_snk, Nc, Np_src, Nc]
         self.tilde_S_psp_cache = None
         self.tilde_S_psp_cached_time = None
+        self.tilde_S_psp_dagger = None
+
+    def _release_current_caches(self):
+        self.vsp_cache = None
+        self.vsp_dagger = None
+        self.vsp_cached_time = None
+        self.psv_cache = None
+        self.psv_dagger = None
+        self.psv_cached_time = None
+        self.psp_cache = None
+        self.psp_dagger = None
+        self.psp_cached_time = None
+        self.tilde_S_psv_cache = None
+        self.tilde_S_psv_cached_time = None
+        self.tilde_S_psv_dagger = None
+        self.tilde_S_vsp_cache = None
+        self.tilde_S_vsp_cached_time = None
+        self.tilde_S_vsp_dagger = None
+        self.tilde_S_psp_cache = None
+        self.tilde_S_psp_cached_time = None
+        self.tilde_S_psp_dagger = None
+
+    def _current_loader_identity(self, key):
+        return tuple(
+            _loader_signature(loader, key) if loader is not None else None
+            for loader in (
+                self.perambulator,
+                self.vsp_propagator,
+                self.psv_propagator,
+                self.psp_propagator,
+                self.overlap_matrix,
+            )
+        )
+
+    def _validate_current_extents(self, usedNe, usedNp):
+        available_ne = None
+        available_np = None
+        for loader, role in (
+            (self.perambulator, "vsv"),
+            (self.vsp_propagator, "vsp"),
+            (self.psv_propagator, "psv"),
+            (self.psp_propagator, "psp"),
+            (self.overlap_matrix, "overlap"),
+        ):
+            loader_ne, loader_np = _loader_extents(loader, role)
+            if loader_ne is not None:
+                if available_ne is None:
+                    available_ne = loader_ne
+                elif available_ne != loader_ne:
+                    raise ValueError("propagator inputs have inconsistent Ne")
+            if loader_np is not None:
+                if available_np is None:
+                    available_np = loader_np
+                elif available_np != loader_np:
+                    raise ValueError("propagator inputs have inconsistent Np")
+        return (
+            _normalize_extent(usedNe, available_ne, "usedNe"),
+            _normalize_extent(usedNp, available_np, "usedNp"),
+        )
 
     def load(self, key, usedNe: int = None, usedNp: int = None):
         """Load data from all available propagators. Slicing is deferred to get-time (like parent)."""
@@ -2161,17 +2426,26 @@ class PropagatorWithCurrent(Propagator):
             logger.debug(f"    PSV (psv_propagator): {self.psv_propagator is not None}")
             logger.debug(f"    PSP (psp_propagator): {self.psp_propagator is not None}")
 
-        if self.key != key:
+        normalized_ne, normalized_np = self._validate_current_extents(usedNe, usedNp)
+        identity = (
+            key,
+            normalized_ne,
+            normalized_np,
+            self._current_loader_identity(key),
+        )
+        if identity != self._cache_identity:
             if self.debug:
-                logger.debug(f"\n  Key changed, loading new data...")
+                logger.debug(f"\n  Cache identity changed, loading data...")
+            self._release_resources()
+            self._release_current_caches()
 
-            # Load VSV via parent. Parent defers slicing to get().
+            # Load VSV via parent using the normalized Ne.
             if self.perambulator is not None:
                 if self.debug:
                     logger.debug(f"  Loading VSV via parent...")
                     log_gpu_memory("load_VSV(before)")
                 try:
-                    super().load(key, usedNe)
+                    super().load(key, normalized_ne)
                     if self.debug:
                         log_gpu_memory("load_VSV(after)")
                         if (
@@ -2286,10 +2560,11 @@ class PropagatorWithCurrent(Propagator):
             if self.debug:
                 log_gpu_memory("clear_caches(after)")
 
-            # Update key and usedNe/usedNp
+            # Update identity only after every input has loaded successfully.
             self.key = key
-            self.usedNe = usedNe
-            self.usedNp = usedNp
+            self.usedNe = normalized_ne
+            self.usedNp = normalized_np
+            self._cache_identity = identity
 
             if self.debug:
                 logger.debug(f"\n  Load completed successfully")
@@ -2300,7 +2575,7 @@ class PropagatorWithCurrent(Propagator):
                 log_gpu_memory(f"PropagatorWithCurrent.load(after, key={key})")
         else:
             if self.debug:
-                logger.debug(f"  Key unchanged, skipping load")
+                logger.debug(f"  Cache identity unchanged, skipping load")
                 logger.debug(f"{'='*80}\n")
                 log_gpu_memory(f"PropagatorWithCurrent.load(skipped, key={key})")
 
@@ -2341,15 +2616,7 @@ class PropagatorWithCurrent(Propagator):
         self.psv_data = None
         self.psp_data = None
         self.overlap_matrix_data = None
-        # Clear high mode caches
-        self.tilde_S_psv_cache = None
-        self.tilde_S_psv_cached_time = None
-        self.tilde_S_psv_dagger = None
-        self.tilde_S_vsp_cache = None
-        self.tilde_S_vsp_cached_time = None
-        self.tilde_S_vsp_dagger = None
-        self.tilde_S_psp_cache = None
-        self.tilde_S_psp_cached_time = None
+        self._release_current_caches()
 
     def _apply_gamma_on_spin(self, array_with_spin_first_two_axes):
         """
@@ -2382,8 +2649,8 @@ class PropagatorWithCurrent(Propagator):
         Output: PSV tail order [..., Np, Nc, Ne]
         """
         spun = self._apply_gamma_on_spin(vsp_block)  # keeps same shape
-        # Move tail axes from (Ne, Np, Nc) -> (Np, Nc, Ne)
-        return spun[:, :, :, :, 1, 2, 0] if False else spun.transpose(0, 1, 2, 4, 5, 3)
+        # Swap sink/source spin axes and move tail (Ne, Np, Nc) -> (Np, Nc, Ne).
+        return spun.transpose(0, 2, 1, 4, 5, 3)
 
     def _dagger_psv(self, psv_block):
         """
@@ -2393,8 +2660,8 @@ class PropagatorWithCurrent(Propagator):
         Output: VSP tail order [..., Ne, Np, Nc]
         """
         spun = self._apply_gamma_on_spin(psv_block)
-        # Move tail axes from (Np, Nc, Ne) -> (Ne, Np, Nc)
-        return spun.transpose(0, 1, 2, 5, 3, 4)
+        # Swap sink/source spin axes and move tail (Np, Nc, Ne) -> (Ne, Np, Nc).
+        return spun.transpose(0, 2, 1, 5, 3, 4)
 
     def _dagger_psp(self, psp_block):
         """
@@ -2851,7 +3118,9 @@ class PropagatorWithCurrent(Propagator):
         else:
             raise ValueError("At least t_source or t_sink should be int")
 
-    def get_VSP_highmode(self, t_source, t_sink, usedNe_source=None):
+    def get_VSP_highmode(
+        self, t_source, t_sink, usedNe_source=None, *, usedNe_sink=None
+    ):
         """
         Get VSP high-mode (eigen->point, projected) propagator.
 
@@ -2870,13 +3139,18 @@ class PropagatorWithCurrent(Propagator):
         Returns:
             Same shape as get_VSP: [Ns, Ns, Ne, Np, Nc] or [t, Ns, Ns, Ne, Np, Nc]
         """
-        # Use self.usedNe if not specified
-        if usedNe_source is None:
-            usedNe_source = self.usedNe
+        # VSP's output eigen index belongs to the sink; its subtraction index belongs to the source.
+        usedNe_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
+        usedNe_sink = _normalize_extent(
+            usedNe_sink, self.usedNe, "usedNe_sink"
+        )
 
-        # If usedNe_source == 0, return unprojected
         if usedNe_source == 0:
-            return self.get_VSP(t_source, t_sink)
+            return self.get_VSP(t_source, t_sink, cache=False)[
+                ..., :usedNe_sink, :, :
+            ]
 
         log_gpu_memory(
             f"get_VSP_highmode(before, t_source={t_source}, t_sink={t_sink})"
@@ -2889,15 +3163,17 @@ class PropagatorWithCurrent(Propagator):
         backend = get_backend()
 
         # Determine caching strategy
-        should_cache_highmode = usedNe_source == self.usedNe
-        should_cache_unprojected = usedNe_source != self.usedNe
+        should_cache_highmode = (
+            usedNe_source == self.usedNe and usedNe_sink == self.usedNe
+        )
+        should_cache_unprojected = not should_cache_highmode
         is_single_time = isinstance(t_source, int) and isinstance(t_sink, int)
         if is_single_time:
             should_cache_highmode = False
             should_cache_unprojected = True
 
         # Check highmode cache (only when should_cache_highmode and is_single_time)
-        if usedNe_source == self.usedNe:
+        if should_cache_highmode:
             if is_single_time:
                 t_rel = (t_sink - t_source) % self.Lt
                 if self.tilde_S_vsp_cached_time == t_source:
@@ -2919,9 +3195,7 @@ class PropagatorWithCurrent(Propagator):
         # Cache unprojected when usedNe != self.usedNe (because we won't cache highmode)
         # Don't cache when usedNe == self.usedNe (because highmode result will be cached)
         S_vsp = self.get_VSP(t_source, t_sink, cache=should_cache_unprojected)
-        # Slice to usedNe_source if needed
-        if usedNe_source != self.usedNe:
-            S_vsp = S_vsp[..., :usedNe_source, :, :]
+        S_vsp = S_vsp[..., :usedNe_sink, :, :]
 
         # Get VSV: S_{i,j}
         S_vsv = self.get(t_source, t_sink)
@@ -2930,7 +3204,7 @@ class PropagatorWithCurrent(Propagator):
         M_full = self.overlap_matrix_data[
             :, : self.usedNe, : self.usedNp, :
         ]  # [Lt, Ne, Np, Nc]
-        M = M_full[:, :usedNe_source, :, :] if usedNe_source != self.usedNe else M_full
+        M = M_full[:, :usedNe_source, :, :]
         M_conj = M.conj()
 
         if is_single_time:
@@ -2942,7 +3216,9 @@ class PropagatorWithCurrent(Propagator):
             #   Index order: j (Ne, 0th), x (Np, 1st), c (Nc, 2nd)
             # Result: [Ns_snk, Ns_src, Ne_i, Np_x, Nc_c]
             correction = contract(
-                "abij,jxc->abixc", S_vsv[:, :, :usedNe_source, :usedNe_source], M_conj_t
+                "abij,jxc->abixc",
+                S_vsv[:, :, :usedNe_sink, :usedNe_source],
+                M_conj_t,
             )
 
             # tilde{S} = S - correction
@@ -2956,7 +3232,7 @@ class PropagatorWithCurrent(Propagator):
                 M_conj_t = M_conj[t_source]  # [Ne, Np, Nc]
                 correction = contract(
                     "tabij,jxc->tabixc",
-                    S_vsv[:, :, :, :usedNe_source, :usedNe_source],
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                     M_conj_t,
                 )
                 tilde_S = S_vsp - correction
@@ -2973,7 +3249,7 @@ class PropagatorWithCurrent(Propagator):
                 M_conj_t = M_conj[t_rel]  # [Lt, Ne, Np, Nc]
                 correction = contract(
                     "tabij,tjxc->tabixc",
-                    S_vsv[:, :, :, :usedNe_source, :usedNe_source],
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                     M_conj_t,
                 )
                 tilde_S = S_vsp - correction
@@ -2990,7 +3266,9 @@ class PropagatorWithCurrent(Propagator):
                 log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_sink=int)")
                 return tilde_S[t_rel]
 
-    def get_PSV_highmode(self, t_source, t_sink, usedNe_sink=None):
+    def get_PSV_highmode(
+        self, t_source, t_sink, usedNe_sink=None, *, usedNe_source=None
+    ):
         """
         Get PSV high-mode (point->eigen, projected) propagator.
 
@@ -3010,13 +3288,16 @@ class PropagatorWithCurrent(Propagator):
         Returns:
             Same shape as get_PSV: [Ns, Ns, Np, Nc, Ne] or [t, Ns, Ns, Np, Nc, Ne]
         """
-        # Use self.usedNe if not specified
-        if usedNe_sink is None:
-            usedNe_sink = self.usedNe
+        # PSV's output eigen index belongs to the source; its subtraction index belongs to the sink.
+        usedNe_sink = _normalize_extent(usedNe_sink, self.usedNe, "usedNe_sink")
+        usedNe_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
 
-        # If usedNe_sink == 0, return unprojected
         if usedNe_sink == 0:
-            return self.get_PSV(t_source, t_sink)
+            return self.get_PSV(t_source, t_sink, cache=False)[
+                ..., :usedNe_source
+            ]
 
         log_gpu_memory(
             f"get_PSV_highmode(before, t_source={t_source}, t_sink={t_sink})"
@@ -3029,17 +3310,17 @@ class PropagatorWithCurrent(Propagator):
         backend = get_backend()
 
         # Determine caching strategy
-        # Cache highmode only when usedNe == self.usedNe
-        should_cache_highmode = usedNe_sink == self.usedNe
-        # Cache unprojected when usedNe != self.usedNe (won't cache highmode)
-        should_cache_unprojected = usedNe_sink != self.usedNe
+        should_cache_highmode = (
+            usedNe_sink == self.usedNe and usedNe_source == self.usedNe
+        )
+        should_cache_unprojected = not should_cache_highmode
         is_single_time = isinstance(t_source, int) and isinstance(t_sink, int)
         if is_single_time:
             should_cache_highmode = False
             should_cache_unprojected = True
 
         # Check cache only if should_cache_highmode and is_single_time
-        if usedNe_sink == self.usedNe:
+        if should_cache_highmode:
             if is_single_time:
                 if self.tilde_S_psv_cached_time == t_source:
                     t_rel = (t_sink - t_source) % self.Lt
@@ -3068,9 +3349,7 @@ class PropagatorWithCurrent(Propagator):
 
         # Get original PSV: S_{xa,i} (cache unprojected when usedNe != self.usedNe)
         S_psv = self.get_PSV(t_source, t_sink, cache=should_cache_unprojected)
-        # Slice to usedNe_sink if needed
-        if usedNe_sink != self.usedNe:
-            S_psv = S_psv[..., :usedNe_sink]
+        S_psv = S_psv[..., :usedNe_source]
 
         # Get VSV: S_{j,i}
         S_vsv = self.get(t_source, t_sink)
@@ -3079,7 +3358,7 @@ class PropagatorWithCurrent(Propagator):
         M_full = self.overlap_matrix_data[
             :, : self.usedNe, : self.usedNp, :
         ]  # [Lt, Ne, Np, Nc]
-        M = M_full[:, :usedNe_sink, :, :] if usedNe_sink != self.usedNe else M_full
+        M = M_full[:, :usedNe_sink, :, :]
 
         if is_single_time:
             M_t = M[t_sink]  # [Ne, Np, Nc]
@@ -3093,7 +3372,9 @@ class PropagatorWithCurrent(Propagator):
             # S_psv: [Ns, Ns, Np, Nc, Ne] where S_psv[s1, s2, x, c, i] = S_{xc,i} = <eta_x,c| S |xi_i>
             # Contract j: sum_j M_t[j, x, c] * S_vsv[s1, s2, j, i] -> [s1, s2, x, c, i]
             correction = contract(
-                "jxc,abji->abxci", M_t, S_vsv[:, :, :usedNe_sink, :usedNe_sink]
+                "jxc,abji->abxci",
+                M_t,
+                S_vsv[:, :, :usedNe_sink, :usedNe_source],
             )
 
             # tilde{S} = S - correction
@@ -3114,7 +3395,7 @@ class PropagatorWithCurrent(Propagator):
                 correction = contract(
                     "tjxc,tabji->tabxci",
                     M_t,
-                    S_vsv[:, :, :, :usedNe_sink, :usedNe_sink],
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                 )
                 tilde_S = S_psv - correction
                 if should_cache_highmode:
@@ -3136,7 +3417,7 @@ class PropagatorWithCurrent(Propagator):
                 correction = contract(
                     "tjxc,abji->tabxci",
                     M_t,
-                    S_vsv[:, :, :, :usedNe_sink, :usedNe_sink],
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                 )
                 tilde_S = S_psv - correction
                 if should_cache_highmode:
@@ -3169,11 +3450,12 @@ class PropagatorWithCurrent(Propagator):
         Returns:
             Array shape: [Ns, Ns, Np_snk, Nc, Np_src, Nc] or [t, Ns, Ns, Np_snk, Nc, Np_src, Nc]
         """
-        # Use self.usedNe if not specified
-        if usedNe_sink is None:
-            usedNe_sink = self.usedNe
-        if usedNe_source is None:
-            usedNe_source = self.usedNe
+        usedNe_sink = _normalize_extent(
+            usedNe_sink, self.usedNe, "usedNe_sink"
+        )
+        usedNe_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
 
         # If no eigenvectors, return unprojected
         if (usedNe_sink == 0) and (usedNe_source == 0):
@@ -3240,7 +3522,10 @@ class PropagatorWithCurrent(Propagator):
 
         # Get tilde VSP for mixed term 2: tilde{S}_{i,yb}
         S_vsp_tilde = self.get_VSP_highmode(
-            t_source, t_sink, usedNe_source=usedNe_source
+            t_source,
+            t_sink,
+            usedNe_source=usedNe_source,
+            usedNe_sink=usedNe_sink,
         )
 
         # Get overlap matrix M (full) and slice for sink and source
@@ -3480,7 +3765,10 @@ def compute_diagrams_multitime(
                         # VSP: sink=vector, source=point
                         # get_VSP_highmode handles usedNe_source=0 internally
                         prop_data = propagator.get_VSP_highmode(
-                            time_list[item[1]], time_list[item[2]], usedNe_source
+                            time_list[item[1]],
+                            time_list[item[2]],
+                            usedNe_source=usedNe_source,
+                            usedNe_sink=usedNe_sink,
                         )
                         if debug:
                             logger.debug(
@@ -3496,7 +3784,10 @@ def compute_diagrams_multitime(
                         # PSV: sink=point, source=vector
                         # get_PSV_highmode handles usedNe_sink=0 internally
                         prop_data = propagator.get_PSV_highmode(
-                            time_list[item[1]], time_list[item[2]], usedNe_sink
+                            time_list[item[1]],
+                            time_list[item[2]],
+                            usedNe_sink=usedNe_sink,
+                            usedNe_source=usedNe_source,
                         )
                         if debug:
                             logger.debug(
