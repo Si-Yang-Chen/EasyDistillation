@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -314,29 +312,6 @@ def test_manifest_content_tamper_is_rejected(tmp_path):
     path.write_text(json.dumps(tampered))
     with pytest.raises(ValueError, match="does not match"):
         load_result_manifest(directory)
-
-
-def test_contraction_entrypoints_fail_before_gpu_without_manifest(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    environment = os.environ.copy()
-    environment.pop("LOCALIZED_INPUT_MANIFEST", None)
-    environment.pop("LOCALIZED_RESULT_ROOT", None)
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    for relative_path in ("4.contraction.py", "examples/4_contraction.py"):
-        completed = subprocess.run(
-            [sys.executable, str(root / relative_path)],
-            cwd=root,
-            env=environment,
-            text=True,
-            capture_output=True,
-            timeout=30,
-        )
-        assert completed.returncode != 0
-        assert "LOCALIZED_INPUT_MANIFEST and LOCALIZED_RESULT_ROOT are required" in completed.stderr
-        assert "Using backend: cupy" not in completed.stdout
-        source = (root / relative_path).read_text()
-        assert "05.correlator.current.nonlocal" not in source
-        assert "exit()" not in source
 
 
 def test_staged_tracked_content_changes_worktree_identity(tmp_path):

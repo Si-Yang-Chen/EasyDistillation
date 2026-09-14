@@ -178,9 +178,8 @@ EasyDistillation/
 │   ├── gen_multi_draw_diagrams.py   # 多图绘制
 │   └── hardcoding_OhD.py            # O_h^D 群硬编码
 │
-├── examples/               # 新示例 (2 个文件)
-│   ├── test_propagator_psv.py     # PSV 传播子测试
-│   └── 4_contraction.py           # 四点收缩
+├── examples/               # 新示例
+│   └── test_propagator_psv.py     # PSV 传播子测试
 │
 ├── doc/                    # 文档
 │   ├── README.md           # 数据形状说明
@@ -191,14 +190,12 @@ EasyDistillation/
 ├── docs/                   # 项目文档
 │   └── DISTILLATION_WORKFLOW.md # 蒸馏工作流说明
 │
-├── openspec/               # 规范和变更管理
-│   ├── project.md          # 项目上下文
-│   ├── AGENTS.md           # AI 代理说明
-│   └── changes/            # 变更记录
-│       ├── add-sparsened-point-propagator/
-│       └── add-contraction-framework/
-│
-└── 4.contraction.py        # 当前开发中的收缩脚本
+└── openspec/               # 规范和变更管理
+    ├── project.md          # 项目上下文
+    ├── AGENTS.md           # AI 代理说明
+    └── changes/            # 变更记录
+        ├── add-sparsened-point-propagator/
+        └── add-contraction-framework/
 ```
 
 ### 统计信息
