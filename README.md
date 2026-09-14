@@ -14,21 +14,20 @@ EasyDistillation is a Python framework for lattice QCD distillation calculations
 
 ## Quick Start
 
-See [Quick Reference](QUICK_REFERENCE.md) for a getting-started guide, API cheat sheet, and common operations.
+The API is documented through the package exports and the tests under `test/`:
+
+```python
+from lattice import Dispatch, set_backend, get_backend
+```
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Quick Reference](QUICK_REFERENCE.md) | Fast lookup for common operations |
-| [Project Architecture](PROJECT_ARCHITECTURE.md) | Full architecture and development guide |
-| [Data Shapes](doc/README.md) | Data type shapes and file naming conventions |
-| [Propagator Theory & Usage](doc/propagator_theory_and_usage.md) | Propagator types, memory estimates, loading examples |
-| [Distillation Workflow](docs/DISTILLATION_WORKFLOW.md) | Traditional distillation step-by-step workflow |
-| [Localized Blending](doc/localized_blending/localized_blending.md) | Theory, implementation, and appendix |
-| [FileData Deep Dive](FILEDATA_DETAILED.md) | File I/O architecture and performance analysis |
-| [Document Index](DOCUMENTATION_INDEX.md) | Full documentation index by scenario |
-| [Vector Current Workflow](WORKFLOW_ANALYSIS.md) | Localized Blending two-point contraction workflow |
+The previous documentation set is archived read-only under
+[`archive/docs/`](archive/docs/ARCHIVE_NOTE.md). It was written against an earlier
+code layout and is **known to be out of date** — see the archive note for specifics.
+A replacement set has not been written yet.
+
+The only live documents are this README and [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 

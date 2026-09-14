@@ -370,7 +370,8 @@ class TestHighModeProjectionFormulas(unittest.TestCase):
     """
     Test the mathematical correctness of high-mode projection formulas.
 
-    Reference: doc/propagator_theory_and_usage.md, formulas 5.1-5.3
+    Reference: archive/docs/propagator_theory_and_usage.md, formulas 5.1-5.3
+    (archived; the formulas are restated inline below)
 
     Formula 5.2: tilde{S}_{xa,i} = S_{xa,i} - sum_j M_{xj,a} S_{j,i}
     Formula 5.3: tilde{S}_{i,xa} = S_{i,xa} - sum_j S_{i,j} M_{jx,a}*
