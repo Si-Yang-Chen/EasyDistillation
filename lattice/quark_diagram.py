@@ -347,6 +347,64 @@ class CurrentVertexAdapter:
             ) from exc
 
 
+def _flatten_paths_matrix(path):
+    """Flatten one adjacency-matrix entry into its propagator labels.
+
+    Same recursion as ``lattice.quark_draw._flatten_paths``; kept here so the
+    validity check below does not depend on the drawing module.
+    """
+    if isinstance(path, int):
+        return [path] if path != 0 else []
+    if isinstance(path, list):
+        labels = []
+        for entry in path:
+            labels.extend(_flatten_paths_matrix(entry))
+        return labels
+    raise ValueError(f"Invalid value {path} in the adjacency matrix")
+
+
+def validate_adjacency_matrix(adjacency_matrix):
+    """Check the quark-link invariants of an adjacency matrix.
+
+    Every propagator entry is a quark line, so at each vertex the number of
+    line-ends is that vertex's quark count. Only three hadrons exist, giving the
+    allowed (outgoing, incoming) degree pairs:
+
+        (0, 0)  isolated hadron — quarks must be linked, hadrons need not
+        (1, 1)  meson: one quark line in, one out
+        (3, 0)  baryon at the source: its three quarks all leave
+        (0, 3)  baryon at the sink: its three quarks all arrive
+
+    Anything else describes a hadron that cannot exist — a vertex with two
+    quark lines out carries four quarks, one with a single dangling end leaves a
+    quark unpaired — and the diagram would fail later, deep inside contraction
+    or drawing, with an error far from the cause.
+
+    Raises:
+        ValueError: naming the first vertex that violates the invariant.
+    """
+    num_vertices = len(adjacency_matrix)
+    degree = [[0, 0] for _ in range(num_vertices)]
+    for i in range(num_vertices):
+        row = adjacency_matrix[i]
+        if len(row) != num_vertices:
+            raise ValueError(
+                f"Adjacency matrix must be square; row {i} has {len(row)} "
+                f"entries, expected {num_vertices}."
+            )
+        for j in range(num_vertices):
+            for _label in _flatten_paths_matrix(row[j]):
+                degree[i][0] += 1   # a line leaves i
+                degree[j][1] += 1   # ... and arrives at j
+    for i, (outgoing, incoming) in enumerate(degree):
+        if (outgoing, incoming) not in {(0, 0), (1, 1), (3, 0), (0, 3)}:
+            raise ValueError(
+                f"Vertex {i} has {outgoing} outgoing and {incoming} incoming "
+                f"quark lines; a hadron must be isolated (0, 0), a meson "
+                f"(1, 1), or a baryon at the source (3, 0) or sink (0, 3)."
+            )
+
+
 class QuarkDiagramOriginal:
     def __init__(self, adjacency_matrix) -> None:
         self.adjacency_matrix = adjacency_matrix
@@ -443,6 +501,7 @@ class QuarkDiagram:
         L: int = None,
         usedNp: int = None,
         debug: bool = False,
+        validate: bool = True,
     ) -> None:
         """
         Initialize QuarkDiagram.
@@ -453,6 +512,10 @@ class QuarkDiagram:
             L: Spatial lattice size (total number of lattice points = L^3)
             usedNp: Number of sampled points (default: usedNp from Current vertex)
             debug: Enable debug output
+            validate: Check the quark-link invariants (every quark carries one
+                line, so a vertex is isolated, a meson, or a baryon at one end).
+                Pass False only for mechanical fragments that are not complete
+                diagrams.
         """
         self.adjacency_matrix = adjacency_matrix
         self.vertex_list = vertex_list
@@ -472,6 +535,9 @@ class QuarkDiagram:
         self.scene_constraints = (
             []
         )  # List[List[Tuple]], constraints for unify_vertex_point_color_indices
+
+        if validate:
+            validate_adjacency_matrix(adjacency_matrix)
 
         self.analyse()
 
@@ -2248,7 +2314,7 @@ class Diagram(Symbol):
                     ]
                     for j in range(component_size)
                 ]
-                new_quark_diagram = QuarkDiagram(component_matrix)
+                new_quark_diagram = QuarkDiagram(component_matrix, validate=False)
                 new_time_list = [self.time_list[i] for i in vertices]
                 new_vertex_list = [self.vertex_list[i] for i in vertices]
                 # Create new propagator_list, only retain used propagators
@@ -2863,7 +2929,7 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None
                         new_adjacency[new_i][new_j] = [
                             (prop_map[v] if v != 0 else 0) for v in value
                         ]
-        combined_diagrams.append(QuarkDiagram(new_adjacency))
+        combined_diagrams.append(QuarkDiagram(new_adjacency, validate=False))
     if timing is not None:
         timing["build_adjacency"] = perf_counter() - t0
 

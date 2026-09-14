@@ -72,7 +72,7 @@ class TestSimplify(unittest.TestCase):
         """Test already simplified Diagram object"""
         # Create an already simplified Diagram object
         diagram = Diagram(
-            QuarkDiagram([[0, 1], [0, 0]]),
+            QuarkDiagram([[0, 1], [0, 0]], validate=False),
             [0, 1],
             [MockVertex("v1"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -84,13 +84,13 @@ class TestSimplify(unittest.TestCase):
         """Test vertex sorting"""
         # Create a Diagram object for vertex sorting
         diagram = Diagram(
-            QuarkDiagram([[0, 1], [0, 0]]),
+            QuarkDiagram([[0, 1], [0, 0]], validate=False),
             [1, 0],
             [MockVertex("v2"), MockVertex("v1")],
             [None, MockPropagator("prop1")],
         )
         expected_result = Diagram(
-            QuarkDiagram([[0, 0], [1, 0]]),
+            QuarkDiagram([[0, 0], [1, 0]], validate=False),
             [0, 1],
             [MockVertex("v1"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -102,13 +102,13 @@ class TestSimplify(unittest.TestCase):
         """Test vertex sorting"""
         # Create a Diagram object for vertex sorting
         diagram = Diagram(
-            QuarkDiagram([[0, 0, 1], [0, [[1, 1, 1]], 0], [0, 1, 0]]),
+            QuarkDiagram([[0, 0, 1], [0, [[1, 1, 1]], 0], [0, 1, 0]], validate=False),
             [0, 0, 0],
             [MockVertex("v1"), MockVertex("v2"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
         )
         expected_result = Diagram(
-            QuarkDiagram([[0, 1, 0], [0, 0, 1], [0, 0, [[1, 1, 1]]]]),
+            QuarkDiagram([[0, 1, 0], [0, 0, 1], [0, 0, [[1, 1, 1]]]], validate=False),
             [0, 0, 0],
             [MockVertex("v1"), MockVertex("v2"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -120,7 +120,7 @@ class TestSimplify(unittest.TestCase):
         """Test removing redundant vertices"""
         # Create a diagram with redundant vertices
         adjacency_matrix = [[0, 0, 1], [0, 0, 0], [0, 0, 0]]
-        quark_diagram = QuarkDiagram(adjacency_matrix)
+        quark_diagram = QuarkDiagram(adjacency_matrix, validate=False)
 
         # Create mock objects
         propagator1 = MockPropagator("prop1")
@@ -138,7 +138,7 @@ class TestSimplify(unittest.TestCase):
 
         # Expected result - diagram after removing redundant vertex
         expected_diagram = Diagram(
-            QuarkDiagram([[0, 1], [0, 0]]),
+            QuarkDiagram([[0, 1], [0, 0]], validate=False),
             [0, 2],  # time_list
             [vertex1, vertex2],  # vertex_list
             [None, propagator1],  # propagator_list
@@ -154,7 +154,7 @@ class TestSimplify(unittest.TestCase):
         """Test already simplified Diagram object"""
         # Create an already simplified Diagram object
         diagram = Diagram(
-            QuarkDiagram([[0, 1], [1, 0]]),
+            QuarkDiagram([[0, 1], [1, 0]], validate=False),
             [0, 0],
             [MockVertex("v1"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -171,7 +171,7 @@ class TestSimplify(unittest.TestCase):
             [0, 0, 0, 0],  # Vertex 4 connects to itself
             [0, 0, 0, 2],
         ]
-        quark_diagram = QuarkDiagram(adjacency_matrix)
+        quark_diagram = QuarkDiagram(adjacency_matrix, validate=False)
 
         # Create mock objects
         propagator1 = MockPropagator("prop1")
@@ -188,12 +188,12 @@ class TestSimplify(unittest.TestCase):
             [None, propagator1, propagator2],  # propagator_list
         )
         expected_result = Diagram(
-            QuarkDiagram([[0, 1], [1, 0]]),
+            QuarkDiagram([[0, 1], [1, 0]], validate=False),
             [0, 1],  # time_list
             [vertex1, vertex2],  # vertex_list
             [None, propagator1],  # propagator_list
         ) * Diagram(
-            QuarkDiagram([[1]]),
+            QuarkDiagram([[1]], validate=False),
             [3],  # time_list
             [vertex4],  # vertex_list
             [None, propagator2],  # propagator_list
@@ -213,7 +213,7 @@ class TestSimplify(unittest.TestCase):
             [0, 0, 0, 0],  # Vertex 2 has no connections
             [0, 0, 0, 2],  # Vertex 3 connects to itself
         ]
-        quark_diagram1 = QuarkDiagram(adjacency_matrix1)
+        quark_diagram1 = QuarkDiagram(adjacency_matrix1, validate=False)
 
         propagator1 = MockPropagator("prop1")
         propagator2 = MockPropagator("prop2")
@@ -235,7 +235,7 @@ class TestSimplify(unittest.TestCase):
             [1, 0, 0],
             [0, 0, 0],  # Vertex 2 is redundant
         ]
-        quark_diagram2 = QuarkDiagram(adjacency_matrix2)
+        quark_diagram2 = QuarkDiagram(adjacency_matrix2, validate=False)
 
         diagram2 = Diagram(
             quark_diagram2,
@@ -249,19 +249,19 @@ class TestSimplify(unittest.TestCase):
 
         # Expected result: based on expected_result from previous tests
         expected_diagram1_simplified = Diagram(
-            QuarkDiagram([[0, 1], [1, 0]]),
+            QuarkDiagram([[0, 1], [1, 0]], validate=False),
             [0, 1],  # time_list
             [vertex1, vertex2],  # vertex_list
             [None, propagator1],  # propagator_list
         ) * Diagram(
-            QuarkDiagram([[1]]),
+            QuarkDiagram([[1]], validate=False),
             [3],  # time_list
             [vertex4],  # vertex_list
             [None, propagator2],  # propagator_list
         )
 
         expected_diagram2_simplified = Diagram(
-            QuarkDiagram([[0, 1], [1, 0]]),
+            QuarkDiagram([[0, 1], [1, 0]], validate=False),
             [0, 1],  # time_list
             [vertex1, vertex2],  # vertex_list
             [None, propagator1],  # propagator_list
@@ -284,7 +284,7 @@ class TestSimplify(unittest.TestCase):
 
         # Test case 1: Simple diagram (test_already_simplified_diagram)
         simple_diagram = Diagram(
-            QuarkDiagram([[0, 1], [0, 0]]),
+            QuarkDiagram([[0, 1], [0, 0]], validate=False),
             [0, 1],
             [MockVertex("v1"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -292,7 +292,7 @@ class TestSimplify(unittest.TestCase):
 
         # Test case 2: Vertex sorting (test_sort_vertex)
         unsorted_diagram = Diagram(
-            QuarkDiagram([[0, 1], [0, 0]]),
+            QuarkDiagram([[0, 1], [0, 0]], validate=False),
             [1, 0],
             [MockVertex("v2"), MockVertex("v1")],
             [None, MockPropagator("prop1")],
@@ -300,7 +300,7 @@ class TestSimplify(unittest.TestCase):
 
         # Test case 3: Diagram with same vertices (test_sort_vertex_with_same_vertex)
         same_vertex_diagram = Diagram(
-            QuarkDiagram([[0, 1, 0], [0, 0, 1], [0, 0, [[1, 1, 1]]]]),
+            QuarkDiagram([[0, 1, 0], [0, 0, 1], [0, 0, [[1, 1, 1]]]], validate=False),
             [0, 0, 0],
             [MockVertex("v1"), MockVertex("v2"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -308,7 +308,7 @@ class TestSimplify(unittest.TestCase):
 
         # Test case 4: Diagram with redundant vertices (test_remove_redundant_vertex)
         redundant_diagram = Diagram(
-            QuarkDiagram([[0, 0, 1], [0, 0, 0], [0, 0, 0]]),
+            QuarkDiagram([[0, 0, 1], [0, 0, 0], [0, 0, 0]], validate=False),
             [0, 1, 2],
             [MockVertex("v1"), MockVertex("redundant"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
@@ -316,7 +316,7 @@ class TestSimplify(unittest.TestCase):
 
         # Test case 5: Diagram with baryon vertex (test_already_simplified_diagram_with_baryon_vertex)
         baryon_diagram = Diagram(
-            QuarkDiagram([[[[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0], [0], [1]]]]),
+            QuarkDiagram([[[[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0], [0], [1]]]], validate=False),
             [0, 0],
             [MockVertex("v1"), MockVertex("v2")],
             [None, MockPropagator("prop1")],
