@@ -142,7 +142,7 @@ num_disp = list(GaugeLink.nmax_generator(num_nabla))[-1]
 num_mom = len(mom_dict_to_list(num_momentum))
 
 # Create current elemental data loaders
-# V2V is the meson elemental — one shared loader for Meson and Current
+# V2V is the meson elemental - one shared loader for Meson and Current
 base_dir = f"/public/home/siyangchen/qedinf/data/beta6.20_mu-0.2770_ms-0.2400_L{L}x{T}"
 elemental_dir = f"{base_dir}/03.current_elemental_all.ndisp{num_nabla}.nmom{num_momentum}.nev{Ne}.np{Np}/"
 
