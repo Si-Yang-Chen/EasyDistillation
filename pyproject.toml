@@ -53,7 +53,7 @@ dev = [
 include = ["lattice*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["test"]
 pythonpath = ["."]
 markers = [
     "gpu: tests requiring GPU (CuPy)",

@@ -62,10 +62,10 @@
 ## 🧪 测试文档
 
 ### 单元测试
-- [传播子测试](tests/test_perambulator.py)
-- [基元测试](tests/test_elemental.py)
-- [Gamma矩阵测试](tests/test_gamma.py)
-- [收缩测试](tests/test_quark_contract.py)
+- [传播子测试](test/test_perambulator.py)
+- [基元测试](test/test_elemental.py)
+- [Gamma矩阵测试](test/test_gamma.py)
+- [收缩测试](test/test_quark_contract.py)
 
 ### 集成测试
 - [流算符收缩](/public/home/siyangchen/qedinf/experiments/localized-blending/test/test_current_contraction.py)
@@ -123,7 +123,7 @@
 | **传播子** | [传播子理论与使用](doc/propagator_theory_and_usage.md) |
 | **两点函数** | [示例](example/gen_twopt.py) |
 | **三点函数** | [流算符示例](example/gen_two_particle_corr.py) |
-| **Gamma矩阵** | [测试](tests/test_gamma.py) |
+| **Gamma矩阵** | [测试](test/test_gamma.py) |
 | **对称性** | [对称性验证](/public/home/siyangchen/qedinf/experiments/localized-blending/test/test_v2p_p2v_symmetry.py) |
 | **GPU加速** | [快速参考](QUICK_REFERENCE.md#后端管理) |
 | **内存优化** | [性能优化](QUICK_REFERENCE.md#内存优化) |

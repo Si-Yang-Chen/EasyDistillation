@@ -142,7 +142,7 @@ EasyDistillation/
 │       ├── two_particles.py    # 两粒子关联函数
 │       └── disperion_relation.py # 色散关系
 │
-├── tests/                  # 单元测试 (24 个测试文件)
+├── test/                  # 单元测试（合并自原 tests/ 与 test/）
 │   ├── test_perambulator.py
 │   ├── test_elemental.py
 │   ├── test_eigenvector.py
@@ -204,7 +204,7 @@ EasyDistillation/
 ### 统计信息
 - **Python 文件总数**: 105 个
 - **核心代码行数**: ~49,853 行
-- **测试文件**: 40 个（`tests/` 24 个 + `test/` 16 个）
+- **测试文件**: 集中存放在 `test/`（原 `tests/` 与 `test/` 已合并）
 - **示例文件**: 11 个（`example/` 9 个 + `examples/` 2 个）
 
 ---
@@ -739,13 +739,13 @@ print(f"Time: {time.time() - start:.2f}s")
 #### 3. 使用测试
 ```bash
 # 运行特定测试
-pytest tests/test_perambulator.py -v
+pytest test/test_perambulator.py -v
 
 # 运行所有测试
-pytest tests/ -v
+pytest test/ -v
 
 # 测试覆盖率
-pytest tests/ --cov=lattice
+pytest test/ --cov=lattice
 ```
 
 ---
@@ -754,7 +754,7 @@ pytest tests/ --cov=lattice
 
 ### 测试组织
 
-#### 单元测试 (`tests/`)
+#### 单元测试 (`test/`)
 - `test_gamma.py`: Gamma 矩阵测试
 - `test_perambulator.py`: 传播子测试
 - `test_elemental.py`: 基元测试
@@ -808,18 +808,18 @@ pytest tests/ --cov=lattice
 
 ```bash
 # 快速测试（跳过 GPU 测试）
-pytest tests/ -m "not gpu"
+pytest test/ -m "not gpu"
 
 # 完整测试
-pytest tests/ -v
+pytest test/ -v
 
 # 特定模块
-pytest tests/test_perambulator.py -v
+pytest test/test_perambulator.py -v
 ```
 
 ### 测试数据
 
-测试数据位于 `tests/` 目录：
+测试数据位于 `test/` 目录：
 - 小格点（4³×8）用于快速测试
 - 示例规范场、本征矢量文件
 

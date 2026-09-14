@@ -331,7 +331,7 @@ $$
 
 ## 9. 当前实现的一般性缺口
 
-理论要求 $r=3,4$ 时分别有 5、15 个带标签集合划分。当前活动源码 [quark_diagram.py](../../lattice/quark_diagram.py) 使用整数划分，现有 [test_sampling_weight.py](../../tests/test_sampling_weight.py) 还把 $r=3,4$ 的期望 scene 数写成 3、5。因此：
+理论要求 $r=3,4$ 时分别有 5、15 个带标签集合划分。当前活动源码 [quark_diagram.py](../../lattice/quark_diagram.py) 使用整数划分，现有 [test_sampling_weight.py](../../test/test_sampling_weight.py) 还把 $r=3,4$ 的期望 scene 数写成 3、5。因此：
 
 - 活动源码对 $r\le2$ 的权重结构正确；
 - 对 $r\ge3$ 的一般非对称相关函数，除非算符约束能被证明使遗漏的标签划分恒零或已用正确多重度合并，否则不能宣称无偏；
