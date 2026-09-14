@@ -14,6 +14,10 @@ logs
 venv
 .venv
 tools
-gen*
+# local scratch drivers — repo root only.
+# Was `gen*`, which also matched the tracked core package lattice/generator/
+# and lattice/symmetry/gen_hardcoded_rep.py, hiding them from `ruff check lattice/`.
+/gen_*.py
+/gen_*.ipynb
 test.py
 test.ipynb
