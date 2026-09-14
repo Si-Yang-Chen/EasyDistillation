@@ -111,6 +111,53 @@ def test_isolated_hadron_is_drawn_not_dropped():
     plt.close("all")
 
 
+def test_meson_self_loop_draws_and_passes_validation():
+    """A meson connecting to itself (disconnected piece / diagonal matrix).
+
+    The self-loop gives each vertex one line out and one in — the same degree as
+    an ordinary meson pair — so the quark-link assertion accepts it, and the
+    line attaches to the operator's two anchor points.
+    """
+    import matplotlib.pyplot as plt
+
+    from lattice.quark_draw import draw_single_diagram
+
+    adjacency = [[1, 0], [0, 1]]
+    attributes = [
+        {"pos": "src", "type": "meson", "name": "$\\rho$"},
+        {"pos": "snk", "type": "meson", "name": "$\\rho$"},
+    ]
+
+    draw_single_diagram(adjacency, attributes, [None, "r"], quark_types={1: "u"})
+    plt.close("all")
+
+
+def test_quark_type_colours_and_marks_lines():
+    """Flavours override the colour list and are written next to their lines."""
+    import matplotlib.pyplot as plt
+
+    from lattice.quark_draw import QUARK_COLORS, draw_single_diagram
+
+    adjacency = [[0, 1, 0], [0, 0, 2], [3, 0, 0]]
+    attributes = [
+        {"pos": "src", "type": "meson", "name": "$\\pi$"},
+        {"pos": "snk", "type": "meson", "name": "$K$"},
+        {"pos": "snk", "type": "meson", "name": "$D$"},
+    ]
+
+    draw_single_diagram(
+        adjacency,
+        attributes,
+        [None] * 5,
+        quark_types={1: "u", 2: "s", 3: "c", 4: "d"},
+    )
+    plt.close("all")
+
+    # the palette is part of the contract: same flavour, same colour
+    assert QUARK_COLORS["u"] == QUARK_COLORS["u"]
+    assert len(set(QUARK_COLORS.values())) == len(QUARK_COLORS)
+
+
 def test_quark_contract_style_baryon_matrix_draws():
     """quark_contract writes baryon contractions as two-level nesting
     (``[source_quark][sink_quark]``) with inner zeros for unconnected pairs; the

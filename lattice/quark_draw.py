@@ -259,7 +259,7 @@ def _vertex_attributes_from_diagram(diagram):
     return adjacency_matrix, vertex_attribute_list
 
 
-def draw_quark_diagram(diagram, line_color_list=None, save_path=None):
+def draw_quark_diagram(diagram, line_color_list=None, save_path=None, quark_types=None):
     """Draw a quark diagram straight from a ``Diagram`` object.
 
     Unlike ``draw_single_diagram``, everything but the colours is read off the
@@ -273,17 +273,26 @@ def draw_quark_diagram(diagram, line_color_list=None, save_path=None):
             needs one more entry than the highest label). Defaults to all
             ``None`` — the figure's default colour for every line.
         save_path: optional path passed through to ``draw_single_diagram``.
+        quark_types: optional ``{propagator_label: flavour}`` map. When given,
+            each line takes the flavour's fixed colour (see ``QUARK_COLORS``) and
+            is marked with the flavour's name, overriding ``line_color_list``.
     """
     adjacency_matrix, vertex_attribute_list = _vertex_attributes_from_diagram(diagram)
     if line_color_list is None:
-        highest = max(
-            [p for row in adjacency_matrix for p in row if isinstance(p, int)]
-            + [q for row in adjacency_matrix for p in row if isinstance(p, list) for q in p],
-            default=0,
-        )
+        labels = [
+            label
+            for row in adjacency_matrix
+            for entry in row
+            for label in _flatten_paths(entry)
+        ]
+        highest = max(labels, default=0)
         line_color_list = [None] * (highest + 1)
     return draw_single_diagram(
-        adjacency_matrix, vertex_attribute_list, line_color_list, save_path
+        adjacency_matrix,
+        vertex_attribute_list,
+        line_color_list,
+        save_path,
+        quark_types=quark_types,
     )
 
 
@@ -296,7 +305,25 @@ def draw_multi_diagrams(adjacency_matrix_list, vertex_attribute_list, line_color
 
 
 
-def draw_single_diagram(adjacency_matrix, vertex_attribute_list, line_color_list, save_path=None):
+# Quark flavours have fixed colours, so a diagram reads the same way every time
+# regardless of who drew it or which convention assigned the propagator labels.
+QUARK_COLORS = {
+    "u": "r",
+    "d": "b",
+    "s": "g",
+    "c": "m",
+    "b": "k",
+    "t": "c",
+}
+
+
+def draw_single_diagram(
+    adjacency_matrix,
+    vertex_attribute_list,
+    line_color_list,
+    save_path=None,
+    quark_types=None,
+):
     """Draw one quark diagram.
 
     Every vertex is drawn, including hadrons with no propagator attached: a
@@ -410,11 +437,34 @@ def draw_single_diagram(adjacency_matrix, vertex_attribute_list, line_color_list
                 if xy_out[0] > xy_in[0]:
                     style = r2l_d
             style["color"] = line_color_list[propagator[0]]  # add color
-            diagram.line(
+            label = None
+            if quark_types is not None and propagator[0] in quark_types:
+                flavour = quark_types[propagator[0]]
+                style["color"] = QUARK_COLORS.get(flavour, style["color"])
+                label = flavour
+            line = diagram.line(
                 op_out.vertex_out[outward_idx[visited_out_idx]],
                 op_in.vertex_in[inward_idx[visited_in_indice]],
                 **style,
             )
+            if label is not None:
+                # Mark the line with its flavour, offset perpendicular from the
+                # midpoint so the text does not sit on the curve.
+                x0, y0 = xy_out
+                x1, y1 = xy_in
+                dx, dy = x1 - x0, y1 - y0
+                mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2
+                norm = (dx * dx + dy * dy) ** 0.5 or 1.0
+                off = 0.04
+                ax.text(
+                    mid_x - dy / norm * off,
+                    mid_y + dx / norm * off,
+                    label,
+                    color=style.get("color"),
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                )
             outward_idx[visited_out_idx] += 1
             inward_idx[visited_in_indice] += 1
     diagram.plot()
