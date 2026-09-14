@@ -63,17 +63,27 @@ def test_attributes_come_from_the_diagram():
 
 
 def test_dagger_gives_side_and_shape_gives_type():
-    """A baryon source and a meson sink in one diagram."""
+    """A baryon source, a baryon sink, and a self-looping meson.
+
+    A baryon source cannot pair with a lone meson sink — its three quark lines
+    would have nowhere to land — so the minimal mixed diagram also carries a
+    second baryon, plus a meson contracting with itself.
+    """
     diagram = _make_diagram(
-        names=["N", "pi"],
-        daggers=[True, False],
-        adjacency=_adjacency(["baryon", "meson"]),
+        names=["N", "N", "pi"],
+        daggers=[True, False, False],
+        adjacency=[
+            [0, [[1, 0, 0], [0, 2, 0], [0, 0, 3]], 0],
+            [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], 0, 0],
+            [0, 0, 4],
+        ],
     )
 
     _, attributes = _vertex_attributes_from_diagram(diagram)
 
     assert (attributes[0]["pos"], attributes[0]["type"]) == ("src", "baryon")
-    assert (attributes[1]["pos"], attributes[1]["type"]) == ("snk", "meson")
+    assert (attributes[1]["pos"], attributes[1]["type"]) == ("snk", "baryon")
+    assert (attributes[2]["pos"], attributes[2]["type"]) == ("snk", "meson")
 
 
 def test_draw_quark_diagram_takes_a_diagram_object():
@@ -89,26 +99,44 @@ def test_draw_quark_diagram_takes_a_diagram_object():
     plt.close("all")
 
 
-def test_isolated_hadron_is_drawn_not_dropped():
-    """A hadron with no propagator is legitimate: quarks carry links, hadrons
-    need not. It must still be drawn, and — the part that used to crash — the
-    vertex indices the propagators refer to must stay aligned when the isolated
-    hadron has a *lower* index than a connected one.
+def test_standalone_hadron_selfloops_and_stays_aligned():
+    """There is no such thing as an isolated meson: every meson has one line out
+    and one in, and both may land on the meson itself (a non-zero diagonal
+    entry). A hadron that contracts with nothing else is drawn as a self-loop,
+    not as a vertex with no lines — a vertex with no lines would leave its
+    quarks unlinked, and validate_adjacency_matrix rejects it.
+
+    The alignment half of the regression is kept: the self-loop sits at vertex 0,
+    *lower* than the connected pair, which is what used to desynchronise the
+    propagator indices when vertices were filtered.
     """
     import matplotlib.pyplot as plt
 
     from lattice.quark_draw import draw_single_diagram
 
-    # vertex 0 is isolated; the propagator refers to vertices 1 -> 2
-    adjacency = [[0, 0, 0], [0, 0, 1], [0, 0, 0]]
+    # vertex 0 self-loops; vertices 1 and 2 contract with each other
+    adjacency = [[1, 0, 0], [0, 0, 1], [0, 2, 0]]
     attributes = [
-        {"pos": "src", "type": "meson", "name": "$vac$"},
+        {"pos": "src", "type": "meson", "name": "$\\rho$"},
         {"pos": "src", "type": "meson", "name": "$D$"},
         {"pos": "snk", "type": "meson", "name": "$D$"},
     ]
 
-    draw_single_diagram(adjacency, attributes, [None, "r"])
+    draw_single_diagram(adjacency, attributes, [None, "r", "b"])
     plt.close("all")
+
+
+def test_vertex_with_no_lines_is_rejected():
+    """The inverse half: a zero row-and-column is not an isolated hadron, it is
+    a hadron whose quarks went nowhere. The assertion names it instead of
+    letting drawing fail with an unrelated IndexError.
+    """
+    import pytest
+
+    from lattice.quark_diagram import QuarkDiagram
+
+    with pytest.raises(ValueError, match="Vertex 0 has 0 outgoing and 0 incoming"):
+        QuarkDiagram([[0, 0, 0], [0, 0, 1], [0, 1, 0]])
 
 
 def test_meson_self_loop_draws_and_passes_validation():

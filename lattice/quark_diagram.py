@@ -367,13 +367,18 @@ def validate_adjacency_matrix(adjacency_matrix):
     """Check the quark-link invariants of an adjacency matrix.
 
     Every propagator entry is a quark line, so at each vertex the number of
-    line-ends is that vertex's quark count. Only three hadrons exist, giving the
-    allowed (outgoing, incoming) degree pairs:
+    line-ends is that vertex's quark count. Since every quark must be linked
+    (quark out, antiquark in) and there are only three hadrons, the allowed
+    (outgoing, incoming) degree pairs are:
 
-        (0, 0)  isolated hadron — quarks must be linked, hadrons need not
-        (1, 1)  meson: one quark line in, one out
+        (1, 1)  meson: one quark line in, one out — possibly both a self-loop
         (3, 0)  baryon at the source: its three quarks all leave
         (0, 3)  baryon at the sink: its three quarks all arrive
+
+    (0, 0) is deliberately absent. A hadron with no lines would leave its quarks
+    unlinked, which cannot happen; a hadron that contracts with nothing else
+    contracts with itself, written as a non-zero diagonal entry
+    (see gen_twopt_diagram.py's disconnected = [[2, 0], [0, 2]]).
 
     Anything else describes a hadron that cannot exist — a vertex with two
     quark lines out carries four quarks, one with a single dangling end leaves a
@@ -397,11 +402,17 @@ def validate_adjacency_matrix(adjacency_matrix):
                 degree[i][0] += 1   # a line leaves i
                 degree[j][1] += 1   # ... and arrives at j
     for i, (outgoing, incoming) in enumerate(degree):
-        if (outgoing, incoming) not in {(0, 0), (1, 1), (3, 0), (0, 3)}:
+        if (outgoing, incoming) not in {(1, 1), (3, 0), (0, 3)}:
+            hint = (
+                "; a hadron that connects to nothing must self-loop, e.g. a "
+                "non-zero diagonal entry"
+                if (outgoing, incoming) == (0, 0)
+                else ""
+            )
             raise ValueError(
                 f"Vertex {i} has {outgoing} outgoing and {incoming} incoming "
-                f"quark lines; a hadron must be isolated (0, 0), a meson "
-                f"(1, 1), or a baryon at the source (3, 0) or sink (0, 3)."
+                f"quark lines; a hadron must be a meson (1, 1), or a baryon at "
+                f"the source (3, 0) or sink (0, 3)" + hint + "."
             )
 
 

@@ -318,13 +318,13 @@ class TestSimplify(unittest.TestCase):
             [None, MockPropagator("prop1")],
         )
 
-        # Test case 6: Diagram with two connected components (test_split_components)
+        # Test case 6: Diagram with multiple connected components (test_split_components)
         split_diagram = Diagram(
             QuarkDiagram(
                 [
                     [0, 1, 0, 0],  # Vertex 0 connects to vertex 1
                     [1, 0, 0, 0],
-                    [0, 0, 0, 0],  # Vertex 2 does not connect
+                    [0, 0, 1, 0],  # Vertex 2 contracts with itself
                     [0, 0, 0, 2],  # Vertex 3 connects to itself
                 ]
             ),

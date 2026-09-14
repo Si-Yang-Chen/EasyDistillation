@@ -328,7 +328,7 @@ class TestSimplify(unittest.TestCase):
                 [
                     [0, 1, 0, 0],  # Vertex 0 connects to vertex 1
                     [1, 0, 0, 0],
-                    [0, 0, 0, 0],  # Vertex 2 does not connect
+                    [0, 0, 1, 0],  # Vertex 2 contracts with itself
                     [0, 0, 0, 2],  # Vertex 3 connects to itself
                 ]
             ),
