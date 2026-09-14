@@ -2535,16 +2535,30 @@ def vertex_type_from_matrix(adjacency_matrix, vertex_idx):
     holds an entry with a three-wide column dimension. Mesons never reach 3.
 
     Reading the row dimension instead of the column silently misclassifies every
-    meson in a mixed diagram; ``test_quark_draw.py`` pins all four combinations,
+    meson in a mixed diagram; ``test_vertex_type.py`` pins all four combinations,
     so a change to the construction order fails a test instead of silently
     drawing the wrong vertex shape.
+
+    Two written conventions reach here, and both must read as baryon:
+
+    - ``quark_contract`` nests twice, ``matrix[i][j][source_quark][sink_quark]``;
+    - hand-written matrices list the quark lines directly, ``[1, 1, 1]``.
+
+    A one-level list of three labels is three quark lines from one vertex, which
+    no meson can have (a meson is one quark line in each direction), so the list
+    itself is the tell.
     """
     for other in range(len(adjacency_matrix)):
         path = adjacency_matrix[vertex_idx][other]
         if not isinstance(path, list) or not path:
             continue
-        first = path[0]
-        if isinstance(first, list) and len(first) == 3:
+        if isinstance(path[0], list):
+            # two-level nesting (quark_contract): the column dimension belongs
+            # to this vertex
+            if len(path[0]) == 3:
+                return "baryon"
+        elif len(path) == 3:
+            # one-level, hand-written: the entry lists the quark lines
             return "baryon"
     return "meson"
 

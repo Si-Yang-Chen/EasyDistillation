@@ -61,6 +61,33 @@ u2d_r = dict(
 )
 
 
+def _flatten_paths(path):
+    """Flatten one adjacency-matrix entry into its propagator labels.
+
+    Two conventions exist and both must work:
+
+    - hand-written matrices use a flat list of labels, ``[1, 1, 1]`` — one entry
+      per quark line leaving the baryon;
+    - ``quark_contract`` writes baryon contractions as two-level nesting,
+      ``matrix[i][j][source_quark][sink_quark]``, where an inner ``0`` means that
+      quark pair is *not* connected.
+
+    Recursing and dropping zeros handles both. Dropping zeros is what makes the
+    two-level form work: the sizing in ``quark_contract`` reserves a slot for
+    every quark pair, but only the pairs that actually carry a propagator are
+    non-zero — and every quark must be linked, so the surviving count is exactly
+    the number of lines to draw.
+    """
+    if isinstance(path, int):
+        return [path] if path != 0 else []
+    if isinstance(path, list):
+        labels = []
+        for entry in path:
+            labels.extend(_flatten_paths(entry))
+        return labels
+    raise ValueError(f"Invalid value {path} in the adjacency matrix")
+
+
 def draw_diagram(diagram, adjacency_matrix, operator_list, line_color_list):
     num_vertex = len(adjacency_matrix)
     outward_idx = [0] * num_vertex
@@ -81,13 +108,9 @@ def draw_diagram(diagram, adjacency_matrix, operator_list, line_color_list):
                     if not visited[j]:
                         visited[j] = True
                         queue.append(j)
-                    if isinstance(path, int):
-                        propagators.append([path, i, j])
-                    elif isinstance(path, list):
-                        for _path in path:
-                            propagators.append([_path, i, j])
-                    else:
-                        raise ValueError(f"Invalid value {path} in the adjacency matrix")
+                    propagators.extend(
+                        [label, i, j] for label in _flatten_paths(path)
+                    )
         if propagators == []:
             continue
         print(propagators)
@@ -215,13 +238,6 @@ draw_diagram(D1, [[0, 0, 1, 0], [0, 0, 0, 0], [0, 0, 0, 3], [1, 0, 0, 0]], [op1,
 # D1.show()
 
 
-def is_row_col_zero(matrix, i):
-    row_all_zero = all(value == 0 for value in matrix[i])
-    col_all_zero = all(matrix[row][i] == 0 for row in range(len(matrix)))
-
-    return row_all_zero and col_all_zero
-
-
 def _vertex_attributes_from_diagram(diagram):
     """Derive ``vertex_attribute_list`` from a quark-diagram ``Diagram``.
 
@@ -252,17 +268,20 @@ def draw_quark_diagram(diagram, line_color_list=None, save_path=None):
 
     Args:
         diagram: a ``lattice.quark_diagram.Diagram`` instance.
-        line_color_list: colour per propagator, indexed as in the adjacency
-            matrix. Defaults to all ``None`` (the figure's default colour).
+        line_color_list: colour per propagator, indexed by the propagator label
+            written into the adjacency matrix (labels start at 1, so the list
+            needs one more entry than the highest label). Defaults to all
+            ``None`` — the figure's default colour for every line.
         save_path: optional path passed through to ``draw_single_diagram``.
     """
     adjacency_matrix, vertex_attribute_list = _vertex_attributes_from_diagram(diagram)
     if line_color_list is None:
-        num_propagators = max(
-            [p for row in adjacency_matrix for p in row if isinstance(p, int)],
+        highest = max(
+            [p for row in adjacency_matrix for p in row if isinstance(p, int)]
+            + [q for row in adjacency_matrix for p in row if isinstance(p, list) for q in p],
             default=0,
         )
-        line_color_list = [None] * (num_propagators + 1)
+        line_color_list = [None] * (highest + 1)
     return draw_single_diagram(
         adjacency_matrix, vertex_attribute_list, line_color_list, save_path
     )
@@ -275,20 +294,19 @@ def draw_multi_diagrams(adjacency_matrix_list, vertex_attribute_list, line_color
         draw_single_diagram(im, vertex_attribute_list, line_color_list, isave)
 
 
+
+
 def draw_single_diagram(adjacency_matrix, vertex_attribute_list, line_color_list, save_path=None):
-    visited_all = [not is_row_col_zero(adjacency_matrix, i) for i in range(len(adjacency_matrix))]
-    print(visited_all)
+    """Draw one quark diagram.
 
-    # do not draw unvisited vertex
-    adjacency_matrix_tmp = [
-        [x for x, flag0 in zip(row0, visited_all) if flag0]
-        for row0 in [row for row, flag in zip(adjacency_matrix, visited_all) if flag]
-    ]
-    adjacency_matrix = adjacency_matrix_tmp
-    print(adjacency_matrix_tmp)
-    vertex_attribute_list = [i for i, flag0 in zip(vertex_attribute_list, visited_all) if flag0]
-    print(vertex_attribute_list)
-
+    Every vertex is drawn, including hadrons with no propagator attached: a
+    quark always carries a link, but a hadron need not — disconnected pieces are
+    a legitimate part of a correlation function. Vertices are therefore never
+    dropped or reindexed, which keeps ``operator_list`` aligned with the vertex
+    indices the propagators refer to. (The previous version filtered rows and
+    columns for empty ones, which desynchronised the two when the filtered
+    vertex had a lower index than a connected one.)
+    """
     fig = plt.figure(figsize=(6, 6))
     ax = fig.add_subplot(111)
 
@@ -323,13 +341,9 @@ def draw_single_diagram(adjacency_matrix, vertex_attribute_list, line_color_list
                     if not visited[j]:
                         visited[j] = True
                         queue.append(j)
-                    if isinstance(path, int):
-                        propagators.append([path, i, j])
-                    elif isinstance(path, list):
-                        for _path in path:
-                            propagators.append([_path, i, j])
-                    else:
-                        raise ValueError(f"Invalid value {path} in the adjacency matrix")
+                    propagators.extend(
+                        [label, i, j] for label in _flatten_paths(path)
+                    )
         if propagators == []:
             continue
 

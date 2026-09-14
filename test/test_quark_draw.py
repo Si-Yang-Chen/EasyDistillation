@@ -87,3 +87,51 @@ def test_draw_quark_diagram_takes_a_diagram_object():
 
     draw_quark_diagram(diagram, line_color_list=[None, "r"])
     plt.close("all")
+
+
+def test_isolated_hadron_is_drawn_not_dropped():
+    """A hadron with no propagator is legitimate: quarks carry links, hadrons
+    need not. It must still be drawn, and — the part that used to crash — the
+    vertex indices the propagators refer to must stay aligned when the isolated
+    hadron has a *lower* index than a connected one.
+    """
+    import matplotlib.pyplot as plt
+
+    from lattice.quark_draw import draw_single_diagram
+
+    # vertex 0 is isolated; the propagator refers to vertices 1 -> 2
+    adjacency = [[0, 0, 0], [0, 0, 1], [0, 0, 0]]
+    attributes = [
+        {"pos": "src", "type": "meson", "name": "$vac$"},
+        {"pos": "src", "type": "meson", "name": "$D$"},
+        {"pos": "snk", "type": "meson", "name": "$D$"},
+    ]
+
+    draw_single_diagram(adjacency, attributes, [None, "r"])
+    plt.close("all")
+
+
+def test_quark_contract_style_baryon_matrix_draws():
+    """quark_contract writes baryon contractions as two-level nesting
+    (``[source_quark][sink_quark]``) with inner zeros for unconnected pairs; the
+    hand-written convention is a flat list. Both must draw, and both must yield
+    three lines for a nucleon.
+    """
+    import matplotlib.pyplot as plt
+
+    from lattice.quark_draw import draw_single_diagram
+
+    attributes = [
+        {"pos": "src", "type": "baryon", "name": "$N$"},
+        {"pos": "snk", "type": "baryon", "name": "$N$"},
+    ]
+
+    # hand-written convention
+    flat = [[0, [1, 1, 1]], [[0, 0, 0], 0]]
+    draw_single_diagram(flat, attributes, [None, "r", "b", "g"])
+    plt.close("all")
+
+    # quark_contract convention: same three quarks, one per diagonal slot
+    nested = [[0, [[1, 0, 0], [0, 2, 0], [0, 0, 3]]], [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], 0]]
+    draw_single_diagram(nested, attributes, [None, "r", "b", "g"])
+    plt.close("all")
