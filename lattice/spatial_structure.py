@@ -1,19 +1,17 @@
 import sympy as sp
 import numpy as np
-from sympy import Matrix, I, S, Pow, Mul
+from sympy import Matrix, Symbol, I, S, Pow, Mul
 from sympy.physics.quantum import Operator
 from typing import Dict, List, Tuple, Literal
 
 from opt_einsum import contract
 from itertools import product
 
-from .symmetry.utils import *
 from .symmetry.gen_hardcoded_rep import (
     genLittleGroupIrrep,
     reductionToLittleGroup,
     wignerRotate,
 )
-from .symmetry.sympy_utils import *
 from .base_types import Tag
 
 

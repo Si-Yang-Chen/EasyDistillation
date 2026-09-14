@@ -1,7 +1,37 @@
-from lattice.symmetry.hardcoded_rep import *
-from lattice.symmetry.gen_hardcoded_rep import *
-from lattice.symmetry.group_generator import *
+#!/usr/bin/env python
+"""Reference snippets for regenerating the Oh group tables and irreps by hand.
+
+Everything below is commented on purpose -- running it regenerates tables that
+``lattice/symmetry/hardcoded_rep.py`` ships pre-computed. The imports list
+exactly the names the snippets reference.
+"""
+
+from lattice.symmetry.gen_hardcoded_rep import (
+    genIrrepOhD,
+    genLittleGroupIrrep,
+    genMatrixGroupOhD,
+    gen_connection,
+    reductionToLittleGroup,
+)
+from lattice.symmetry.group_generator import (
+    C4_generator1,
+    C4_generator2,
+    Dic2_generator,
+    Dic3_generator,
+    Dic4_generator,
+    Fermion_generator,
+    OhD_generator,
+    irrep_generators,
+)
+from lattice.symmetry.hardcoded_rep import (
+    Dic2_irreps,
+    Dic4_irreps,
+    Fermion_rep,
+    OD_irreps,
+    little_group_reduction_map_Dic4,
+)
 from lattice.symmetry.utils import multiplicationTable
+
 
 # edit the generator of fermion representation "generator.Fermion_generator"
 # generate the matrix representation of the group OHD with "genMatrixGroupOhD"

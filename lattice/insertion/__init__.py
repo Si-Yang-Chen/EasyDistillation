@@ -1,4 +1,9 @@
+import copy
+import sympy as sp
+from sympy import sqrt
 from typing import Dict, List
+
+from ..symmetry.gen_hardcoded_rep import reductionToLittleGroup
 
 from .gamma import (
     GammaName,
@@ -17,7 +22,6 @@ from .derivative import (
     hermiticity as derivative_hermiticity,
 )
 
-from ..symmetry import *
 from .gauge_link import gauge_transform_dict, GaugeLink,gauge_group,gauge_parity,gauge_charge_conjugate,gauge_hermiticity
 from .gamma import gamma_transform
 

@@ -1,5 +1,8 @@
 from functools import lru_cache
 
+from lattice.symmetry.gen_hardcoded_rep import genLittleGroupIrrep
+from lattice.symmetry.hardcoded_rep import group_element
+
 from ..backend import get_backend
 
 
@@ -202,8 +205,6 @@ class GammaName:
     A1 = R"$a_1$"
     B1 = R"$b_1$"
 
-
-from lattice.symmetry.gen_hardcoded_rep import *
 
 
 def genGammaTransformDict():

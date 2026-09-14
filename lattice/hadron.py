@@ -1,20 +1,20 @@
 import sympy as sp
 import numpy as np
-from sympy import Matrix, I, S, Pow, Mul
+from sympy import Add, Expr, Matrix, I, S, Pow, Mul
 from sympy.physics.quantum import Operator
 from typing import Dict, List, Tuple, Literal
 
 from opt_einsum import contract
 from itertools import product
 
-from .symmetry.utils import *
 from .symmetry.gen_hardcoded_rep import (
     genLittleGroupIrrep,
     reductionToLittleGroup,
     wignerRotate,
 )
-from .symmetry.sympy_utils import *
-from .flavor_structure import *
+from .symmetry.sympy_utils import convert_pow_to_mul
+from .base_types import Tag
+from .flavor_structure import HadronFlavorStructure
 from .spatial_structure import HadronIrrepRow, HadronIrrep
 from .quark_diagram import diagram_simplify, diagram_vertice_replace, quark_contract
 
