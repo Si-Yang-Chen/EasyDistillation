@@ -52,6 +52,11 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["lattice*"]
 
+[tool.setuptools.package-data]
+# stout_smear.cu is read at runtime by lattice/generator/*.py; without this it is
+# absent from the wheel and CUDA kernel compilation fails after installation.
+"lattice.generator" = ["*.cu"]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
