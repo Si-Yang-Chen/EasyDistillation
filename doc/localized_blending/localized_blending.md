@@ -4,11 +4,13 @@
 
 ## 文档结构
 
-1. **[理论部分](localized_blending_theory.md)** - 理论基础和数学公式
-   - 理论部分：基底分解、算符投影
-   - 使用全部点的情况
-   - 部分点采样的无偏估计
-   - 实际计算：$Tr[O_{1,\text{low}} S O_2 S]$ 的展开
+1. **[理论部分](localized_blending_theory.md)** - all-to-all 相关函数的无偏抽样理论与证据边界
+   - 条件无偏性的定义，以及低模/补空间完整分解
+   - 任意多点函数的联合包含概率与 Horvitz–Thompson 权重
+   - 带标签集合划分、共享/独立点集、局域/非局域算符
+   - current→meson、非等时/等时 current→current 和高阶函数
+   - $N_e$、$N_p$ 对偏差、方差与成本的不同作用
+   - v1.4 实测证据、统计限制、实现缺口与验证契约
 
 2. **[程序实现部分](localized_blending_implementation.md)** - 代码实现和使用说明
    - 执行顺序导引

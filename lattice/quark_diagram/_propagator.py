@@ -436,8 +436,8 @@ class PropagatorWithCurrent(Propagator):
         Output: PSV tail order [..., Np, Nc, Ne]
         """
         spun = self._apply_gamma_on_spin(vsp_block)  # keeps same shape
-        # Move tail axes from (Ne, Np, Nc) -> (Np, Nc, Ne)
-        return spun[:, :, :, :, 1, 2, 0] if False else spun.transpose(0, 1, 2, 4, 5, 3)
+        # Swap sink/source spin axes and move tail (Ne, Np, Nc) -> (Np, Nc, Ne).
+        return spun.transpose(0, 2, 1, 4, 5, 3)
 
     def _dagger_psv(self, psv_block):
         """
@@ -447,8 +447,8 @@ class PropagatorWithCurrent(Propagator):
         Output: VSP tail order [..., Ne, Np, Nc]
         """
         spun = self._apply_gamma_on_spin(psv_block)
-        # Move tail axes from (Np, Nc, Ne) -> (Ne, Np, Nc)
-        return spun.transpose(0, 1, 2, 5, 3, 4)
+        # Swap sink/source spin axes and move tail (Np, Nc, Ne) -> (Ne, Np, Nc).
+        return spun.transpose(0, 2, 1, 5, 3, 4)
 
     def _dagger_psp(self, psp_block):
         """

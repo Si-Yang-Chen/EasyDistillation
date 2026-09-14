@@ -35,69 +35,150 @@ from .backend import get_backend, log_gpu_memory
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_extent(value, available, name):
+    if available is None:
+        raise ValueError(f"cannot determine available {name}")
+    if value is None:
+        value = available
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        raise TypeError(f"{name} must be an integer")
+    value = int(value)
+    available = int(available)
+    if value < 0 or value > available:
+        raise ValueError(f"{name}={value} is outside [0, {available}]")
+    return value
+
+
+def _available_extent(loader, data, attribute, axes):
+    declared = getattr(loader, attribute, None)
+    if isinstance(declared, bool) or not isinstance(declared, (int, np.integer)):
+        declared = None
+    shape = getattr(data, "shape", None)
+    dimensions = []
+    if shape is not None:
+        for axis in axes:
+            try:
+                dimensions.append(int(shape[axis]))
+            except (IndexError, TypeError):
+                pass
+    if declared is not None:
+        declared = int(declared)
+        if dimensions and any(dimension != declared for dimension in dimensions):
+            raise ValueError(
+                f"{attribute}={declared} conflicts with data shape {tuple(shape)}"
+            )
+        return declared
+    if not dimensions:
+        return None
+    if any(dimension != dimensions[0] for dimension in dimensions[1:]):
+        raise ValueError(f"inconsistent {attribute} dimensions in shape {tuple(shape)}")
+    return dimensions[0]
+
+
+def _metadata_shape(loader):
+    shape = getattr(loader, "shape", None)
+    if not isinstance(shape, (tuple, list)):
+        shape = getattr(getattr(loader, "elem", None), "shape", None)
+    return tuple(shape) if isinstance(shape, (tuple, list)) else ()
+
+
+def _loader_extents(loader, role):
+    if loader is None:
+        return None, None
+    declared_ne = getattr(loader, "Ne", None)
+    declared_np = getattr(loader, "Np", None)
+    ne = int(declared_ne) if isinstance(declared_ne, (int, np.integer)) and not isinstance(declared_ne, bool) else None
+    np_ = int(declared_np) if isinstance(declared_np, (int, np.integer)) and not isinstance(declared_np, bool) else None
+    shape = _metadata_shape(loader)
+    axes = {
+        "vsv": ((-2, -1), ()),
+        "vsp": ((-3,), (-2,)),
+        "psv": ((-1,), (-3,)),
+        "overlap": ((-3,), (-2,)),
+        "psp": ((), (-4, -2)),
+    }
+    ne_axes, np_axes = axes[role]
+    ne_dims = [int(shape[axis]) for axis in ne_axes if len(shape) >= abs(axis)]
+    np_dims = [int(shape[axis]) for axis in np_axes if len(shape) >= abs(axis)]
+    if ne_dims and any(value != ne_dims[0] for value in ne_dims[1:]):
+        raise ValueError(f"{role} has inconsistent Ne dimensions: {shape}")
+    if np_dims and any(value != np_dims[0] for value in np_dims[1:]):
+        raise ValueError(f"{role} has inconsistent Np dimensions: {shape}")
+    inferred_ne = ne_dims[0] if ne_dims else None
+    inferred_np = np_dims[0] if np_dims else None
+    if ne is not None and inferred_ne is not None and ne != inferred_ne:
+        raise ValueError(f"{role} Ne={ne} conflicts with shape {shape}")
+    if np_ is not None and inferred_np is not None and np_ != inferred_np:
+        raise ValueError(f"{role} Np={np_} conflicts with shape {shape}")
+    return ne if ne is not None else inferred_ne, np_ if np_ is not None else inferred_np
+
+
+def _data_signature(data):
+    version = getattr(data, "cache_version", getattr(data, "version", None))
+    file = getattr(data, "file", None)
+    file_state = None
+    if isinstance(file, str):
+        try:
+            stat = os.stat(file)
+            file_state = (file, stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            file_state = (file, None, None)
+    content_hash = None
+    if isinstance(data, np.ndarray):
+        contiguous = np.ascontiguousarray(data)
+        content_hash = hashlib.sha256(contiguous.view(np.uint8)).hexdigest()
+    return (
+        type(data).__module__,
+        type(data).__qualname__,
+        tuple(getattr(data, "shape", ()) or ()),
+        str(getattr(data, "dtype", None)),
+        version,
+        file_state,
+        content_hash,
+    )
+
+
+def _loader_signature(loader, key):
+    elem = getattr(loader, "elem", None)
+    shape = tuple(getattr(elem, "shape", ()) or ())
+    dtype = getattr(elem, "dtype", None)
+    prefix = getattr(loader, "prefix", None)
+    suffix = getattr(loader, "suffix", None)
+    resolved = None
+    file_state = None
+    if isinstance(prefix, str) and isinstance(suffix, str) and "?" not in suffix:
+        resolved = f"{prefix}{key}{suffix}"
+        try:
+            stat = os.stat(resolved)
+            file_state = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            file_state = None
+    return (
+        type(loader).__module__,
+        type(loader).__qualname__,
+        id(loader),
+        prefix,
+        suffix,
+        shape,
+        dtype,
+        getattr(loader, "Ne", None),
+        getattr(loader, "Np", None),
+        getattr(loader, "cache_version", getattr(loader, "version", None)),
+        resolved,
+        file_state,
+    )
+
+
+def _operator_signature(operator):
+    return hashlib.sha256(repr(getattr(operator, "parts", None)).encode()).hexdigest()
+
+
 # Fixed label sets for Einstein summation (opt_einsum)
 _SUB_VECTOR = "NOPQRSTUVWXYZ"  # Eigenvector/color indices
 _SUB_SPIN = "ABCDEFGHIJKLM"  # Spin indices
-
-
-def _slice_vsv_source_modes(S_vsv, usedNe_source):
-    """Keep every sink eigenmode; truncate the source (last) eigen axis."""
-    return S_vsv[..., :usedNe_source]
-
-
-def _slice_vsv_sink_modes(S_vsv, usedNe_sink):
-    """Truncate the sink eigen axis; keep every source eigenmode."""
-    return S_vsv[..., :usedNe_sink, :]
-
-
-def _slice_vsp_sink_modes(S_vsp, usedNe_sink):
-    """VSP layout is [..., Ne_sink, Np, Nc]."""
-    return S_vsp[..., :usedNe_sink, :, :]
 _SUB_POINT = "nopqrstuvwxyz"  # Point indices
 _SUB_COLOR = "abcdefghijklm"  # Color indices
-_DISTINCT_POINT_MASK_CACHE = {}
-
-
-def _distinct_point_mask(backend, point_count):
-    key = (backend.__name__, int(point_count))
-    mask = _DISTINCT_POINT_MASK_CACHE.get(key)
-    if mask is None:
-        mask = backend.ones(
-            (point_count, point_count), dtype=np.complex128
-        ) - backend.eye(point_count, dtype=np.complex128)
-        _DISTINCT_POINT_MASK_CACHE[key] = mask
-    return mask
-
-
-def dagger_v2p_from_p2v(array):
-    """Map [..., Np, Nc, Ne] to daggered [..., Ne, Np, Nc]."""
-    axes = tuple(range(array.ndim - 3)) + (
-        array.ndim - 1,
-        array.ndim - 3,
-        array.ndim - 2,
-    )
-    return array.conj().transpose(axes)
-
-
-def dagger_p2v_from_v2p(array):
-    """Map [..., Ne, Np, Nc] to daggered [..., Np, Nc, Ne]."""
-    axes = tuple(range(array.ndim - 3)) + (
-        array.ndim - 2,
-        array.ndim - 1,
-        array.ndim - 3,
-    )
-    return array.conj().transpose(axes)
-
-
-def dagger_p2p_elemental(array):
-    """Swap point/color endpoint pairs and conjugate a P2P elemental."""
-    axes = tuple(range(array.ndim - 4)) + (
-        array.ndim - 2,
-        array.ndim - 1,
-        array.ndim - 4,
-        array.ndim - 3,
-    )
-    return array.conj().transpose(axes)
 
 
 def integer_partitions(n: int) -> List[List[int]]:
@@ -126,30 +207,6 @@ def integer_partitions(n: int) -> List[List[int]]:
             if not partition or i >= partition[0]:
                 partitions.append([i] + partition)
     return partitions
-
-
-def point_set_partitions(count: int) -> List[Tuple[int, ...]]:
-    """Enumerate canonical assignments for all set partitions of point ends."""
-    if count == 0:
-        return [tuple()]
-    assignments = [(0,)]
-    for _ in range(1, count):
-        next_assignments = []
-        for assignment in assignments:
-            for point_id in range(max(assignment) + 2):
-                next_assignments.append(assignment + (point_id,))
-        assignments = next_assignments
-    return assignments
-
-
-def enumerate_point_assignment_scenes(r: int, L: int, usedNp: int):
-    scenes = []
-    for assignment in point_set_partitions(r):
-        distinct_count = max(assignment) + 1 if assignment else 0
-        scenes.append(
-            (assignment, calculate_sampling_weight(L, usedNp, distinct_count))
-        )
-    return scenes
 
 
 def calculate_sampling_weight(L: int, usedNp: int, k: int) -> float:
@@ -274,6 +331,133 @@ def partition_to_constraints(
         point_id_counter += 1
 
     return constraints
+
+
+class CurrentVertexAdapter:
+    """Adapt equal-time assembled V2V current vertices to ``get(t)``.
+
+    Temporal point-split terms are deliberately rejected here: they require
+    term-wise endpoint contraction through ``contract_directed_current_v2v``.
+    """
+
+    def __init__(self, vertices_by_time):
+        if not isinstance(vertices_by_time, dict) or not vertices_by_time:
+            raise TypeError("CurrentVertexAdapter requires a non-empty time-to-vertex dict")
+        values = {}
+        source_ne = sink_ne = None
+        for time, adapter in vertices_by_time.items():
+            if isinstance(time, (bool, np.bool_)) or not isinstance(
+                time, (int, np.integer)
+            ):
+                raise TypeError("CurrentVertexAdapter time keys must be integers")
+            if not isinstance(adapter, dict):
+                raise TypeError("CurrentVertexAdapter entries must be adapter mappings")
+            if adapter.get("schema") != "lattice.current.assembler/v1":
+                raise ValueError("CurrentVertexAdapter entry has an unsupported schema")
+            if adapter.get("axes") != (
+                "sink_spin", "source_spin", "sink_ne", "source_ne"
+            ):
+                raise ValueError("CurrentVertexAdapter entry has invalid V2V axes")
+            term_count = adapter.get("term_count")
+            if (
+                isinstance(term_count, (bool, np.bool_))
+                or not isinstance(term_count, (int, np.integer))
+                or term_count <= 0
+            ):
+                raise ValueError("CurrentVertexAdapter entry has invalid term count")
+            terms = adapter.get("terms")
+            if not isinstance(terms, (list, tuple)) or len(terms) != term_count:
+                raise TypeError("CurrentVertexAdapter entry requires complete term endpoint provenance")
+            for term in terms:
+                endpoints = term.get("endpoints") if isinstance(term, dict) else None
+                expected = {"bar_time", "field_time", "link_origin_time", "temporal_point_split", "boundary"}
+                if not isinstance(endpoints, dict) or set(endpoints) != expected:
+                    raise TypeError("CurrentVertexAdapter entry has invalid endpoint provenance")
+                for name in ("bar_time", "field_time", "link_origin_time"):
+                    value = endpoints[name]
+                    if isinstance(value, (bool, np.bool_)) or not isinstance(
+                        value, (int, np.integer)
+                    ):
+                        raise TypeError("CurrentVertexAdapter endpoint times must be integers")
+                if endpoints["boundary"] not in {"periodic", "open", "unbounded"}:
+                    raise ValueError("CurrentVertexAdapter endpoint boundary is invalid")
+                if not isinstance(
+                    endpoints["temporal_point_split"], (bool, np.bool_)
+                ):
+                    raise TypeError("CurrentVertexAdapter temporal endpoint flag must be a bool")
+                if endpoints["temporal_point_split"] or endpoints["bar_time"] != endpoints["field_time"]:
+                    raise ValueError(
+                        "CurrentVertexAdapter cannot consume point-split terms; "
+                        "use contract_directed_current_v2v"
+                    )
+            value = np.asarray(adapter.get("vertex"))
+            if (
+                value.ndim != 4
+                or value.shape[:2] != (4, 4)
+                or not np.issubdtype(value.dtype, np.complexfloating)
+                or not np.all(np.isfinite(value))
+            ):
+                raise ValueError(
+                    "CurrentVertexAdapter vertex must be finite complex "
+                    "(4, 4, sink_ne, source_ne)"
+                )
+            entry_ne = adapter.get("ne")
+            if not isinstance(entry_ne, dict) or set(entry_ne) != {"source", "sink"}:
+                raise TypeError("CurrentVertexAdapter entry is missing Ne provenance")
+            counts = {}
+            for axis in ("source", "sink"):
+                axis_ne = entry_ne[axis]
+                if not isinstance(axis_ne, dict) or set(axis_ne) != {"available", "used"}:
+                    raise TypeError("CurrentVertexAdapter entry has invalid Ne provenance")
+                available, used = axis_ne["available"], axis_ne["used"]
+                if any(
+                    isinstance(x, (bool, np.bool_))
+                    or not isinstance(x, (int, np.integer))
+                    for x in (available, used)
+                ):
+                    raise TypeError("CurrentVertexAdapter entry has invalid Ne provenance")
+                available, used = int(available), int(used)
+                if available < 0 or not 0 <= used <= available:
+                    raise ValueError("CurrentVertexAdapter entry has invalid Ne bounds")
+                counts[axis] = used
+            entry_source, entry_sink = counts["source"], counts["sink"]
+            if value.shape[2:] != (entry_sink, entry_source):
+                raise ValueError(
+                    "CurrentVertexAdapter vertex shape disagrees with Ne provenance"
+                )
+            if source_ne is None:
+                source_ne, sink_ne = entry_source, entry_sink
+            elif (source_ne, sink_ne) != (entry_source, entry_sink):
+                raise ValueError("CurrentVertexAdapter entries must share source/sink Ne")
+            values[int(time)] = value.transpose(1, 0, 3, 2)
+        self._values = values
+        self.used_source_ne = source_ne
+        self.used_sink_ne = sink_ne
+        self.usedNe = source_ne if source_ne == sink_ne else None
+        self.smeared = False
+
+    def get(self, time):
+        if isinstance(time, (int, np.integer)) and not isinstance(
+            time, (bool, np.bool_)
+        ):
+            try:
+                return self._values[int(time)]
+            except KeyError as exc:
+                raise IndexError(
+                    "CurrentVertexAdapter has no vertex for requested time"
+                ) from exc
+        indices = np.asarray(time)
+        if indices.ndim != 1 or not np.issubdtype(indices.dtype, np.integer):
+            raise TypeError(
+                "CurrentVertexAdapter time must be an integer or "
+                "one-dimensional integer array"
+            )
+        try:
+            return np.stack([self._values[int(index)] for index in indices], axis=0)
+        except KeyError as exc:
+            raise IndexError(
+                "CurrentVertexAdapter has no vertex for requested time"
+            ) from exc
 
 
 class QuarkDiagramOriginal:
@@ -1166,6 +1350,10 @@ class StateExpandedDiagram(QuarkDiagram):
         """
         from itertools import product as iter_product
 
+        # Use L and usedNp from instance (set during initialization)
+        M = self.L  # Total number of lattice points (L^3)
+        N = self.usedNp  # Number of sampled points
+
         # Collect sampling groups from state_dict if not already collected
         self._collect_sampling_groups(self._vertex_state)
 
@@ -1174,25 +1362,20 @@ class StateExpandedDiagram(QuarkDiagram):
         self.scene_weights = []
         self.scene_constraints = []
 
-        # Spatial size L (M=L^3) and sample count usedNp are required for weighted scenes
-        L = self.L
-        usedNp = self.usedNp
-
         if not self.sampling_groups:
             # No point sampling needed, create a single SceneExpandedDiagram
             scene_diagram = SceneExpandedDiagram(
                 adjacency_matrix=self.adjacency_matrix,
                 vertex_list=self.vertex_list,
-                operands=deepcopy(self.operands),
-                subscripts=deepcopy(self.subscripts),
-                operands_data=deepcopy(self.operands_data),
-                propagator_types=deepcopy(self.propagator_types),
-                vertex_types=deepcopy(self.vertex_types),
-                vertex_infos=deepcopy(self.vertex_infos),
+                operands=self.operands,
+                subscripts=self.subscripts,
+                operands_data=self.operands_data,
+                propagator_types=self.propagator_types,
+                vertex_types=self.vertex_types,
+                vertex_infos=self.vertex_infos,
                 scene_constraints=[],
-                scene_weight=1.0,
-                L=L,
-                usedNp=usedNp,
+                L=M,  # M here represents total lattice points (L^3)
+                usedNp=N,
                 debug=self.debug,
             )
             scene_diagram.unify_vertex_point_color_indices()
@@ -1203,12 +1386,6 @@ class StateExpandedDiagram(QuarkDiagram):
                 logger.debug(f"No sampling groups, keeping as single scene")
             return
 
-        if L is None or usedNp is None:
-            raise ValueError(
-                "L (spatial lattice size) and usedNp are required for point-sampling "
-                "weight calculation: weight uses M=L^3 and N=usedNp (theory 7.1)."
-            )
-
         if self.debug:
             logger.debug(f"Generating scenes for {len(self.sampling_groups)} sampling groups")
 
@@ -1217,9 +1394,9 @@ class StateExpandedDiagram(QuarkDiagram):
         group_scenes = {}
         for group_id, positions in self.sampling_groups.items():
             r = len(positions)
-            scenes = enumerate_point_assignment_scenes(r, L, usedNp)
+            scenes = enumerate_point_scenes(r, M, N)
             group_scenes[group_id] = [
-                (assignment, weight, positions) for assignment, weight in scenes
+                (partition, weight, positions) for partition, weight in scenes
             ]
 
             if self.debug:
@@ -1234,18 +1411,11 @@ class StateExpandedDiagram(QuarkDiagram):
             total_weight = 1.0
             all_positions = []
             all_partitions = []
-            distinct_point_id_groups = []
-            point_id_offset = 0
 
-            for group_idx, (assignment, weight, positions) in enumerate(scene_combo):
+            for group_idx, (partition, weight, positions) in enumerate(scene_combo):
                 total_weight *= weight
                 all_positions.extend(positions)
-                all_partitions.append((assignment, positions))
-                point_count = max(assignment) + 1 if assignment else 0
-                distinct_point_id_groups.append(
-                    tuple(range(point_id_offset, point_id_offset + point_count))
-                )
-                point_id_offset += point_count
+                all_partitions.append((partition, positions))
 
             # Generate constraints from partitions
             constraints = self._build_scene_constraints(all_partitions)
@@ -1259,17 +1429,15 @@ class StateExpandedDiagram(QuarkDiagram):
             scene_diagram = SceneExpandedDiagram(
                 adjacency_matrix=self.adjacency_matrix,
                 vertex_list=self.vertex_list,
-                operands=deepcopy(self.operands),
-                subscripts=deepcopy(self.subscripts),
-                operands_data=deepcopy(self.operands_data),
-                propagator_types=deepcopy(self.propagator_types),
-                vertex_types=deepcopy(self.vertex_types),
-                vertex_infos=deepcopy(self.vertex_infos),
+                operands=self.operands,
+                subscripts=self.subscripts,
+                operands_data=self.operands_data,
+                propagator_types=self.propagator_types,
+                vertex_types=self.vertex_types,
+                vertex_infos=self.vertex_infos,
                 scene_constraints=constraints,
-                distinct_point_id_groups=distinct_point_id_groups,
-                scene_weight=total_weight,
-                L=L,
-                usedNp=usedNp,
+                L=M,  # M here represents total lattice points (L^3)
+                usedNp=N,
                 debug=self.debug,
             )
             scene_diagram.unify_vertex_point_color_indices()
@@ -1344,15 +1512,30 @@ class StateExpandedDiagram(QuarkDiagram):
         # Process each group's partition separately, using separate point ID ranges
         point_id_offset = 0
 
-        for assignment, positions in partitions_and_positions:
-            for local_point_id, (vertex_idx, side) in zip(assignment, positions):
-                group_point_id = point_id_offset + local_point_id
-                left_id, right_id = constraints[vertex_idx]
-                if side == "left":
-                    constraints[vertex_idx] = (group_point_id, right_id)
-                else:
-                    constraints[vertex_idx] = (left_id, group_point_id)
-            point_id_offset += max(assignment) + 1 if assignment else 0
+        for partition, positions in partitions_and_positions:
+            # Convert this group's partition to constraints
+            point_id_counter = point_id_offset
+            position_idx = 0
+
+            for group_size in partition:
+                group_point_id = point_id_counter
+
+                for _ in range(group_size):
+                    if position_idx < len(positions):
+                        vertex_idx, side = positions[position_idx]
+                        left_id, right_id = constraints[vertex_idx]
+
+                        if side == "left":
+                            constraints[vertex_idx] = (group_point_id, right_id)
+                        else:  # side == "right"
+                            constraints[vertex_idx] = (left_id, group_point_id)
+
+                        position_idx += 1
+
+                point_id_counter += 1
+
+            # Update offset for next group
+            point_id_offset = point_id_counter
 
         return constraints
 
@@ -1381,8 +1564,6 @@ class SceneExpandedDiagram(QuarkDiagram):
         vertex_types: List = None,
         vertex_infos: List = None,
         scene_constraints: List = None,
-        distinct_point_id_groups: List[Tuple[int, ...]] = None,
-        scene_weight: float = 1.0,
         L: int = None,
         usedNp: int = None,
         debug: bool = False,
@@ -1400,8 +1581,6 @@ class SceneExpandedDiagram(QuarkDiagram):
             vertex_types: List of vertex types for each contraction group
             vertex_infos: List of vertex point info for each contraction group
             scene_constraints: Constraints for unify_vertex_point_color_indices
-            distinct_point_id_groups: Point IDs that must be pairwise distinct within each sampling group
-            scene_weight: Sampling compensation weight for this scene
             L: Spatial lattice size (total number of lattice points = L^3)
             usedNp: Number of sampled points (default: usedNp from Current vertex)
             debug: Enable debug output
@@ -1423,113 +1602,79 @@ class SceneExpandedDiagram(QuarkDiagram):
         # Initialize sampling-related fields
         self.sampling_groups = {}
         self.scene_constraints = scene_constraints
-        self.distinct_point_id_groups = distinct_point_id_groups or []
-        self.distinct_point_label_groups = []
-        self.scene_weight = scene_weight
 
     def unify_vertex_point_color_indices(self) -> None:
         """
-        Unify spatial-point Einstein indices according to scene constraints.
+        Unify point and color indices for specified vertices based on constraints.
 
-        Same constraint id means the same sampled spatial point. Color indices remain
-        independent because sampling is over points, not point-color basis states.
-        Eigenvector ends must use None in constraints.
+        Uses pre-recorded metadata from _build_subscripts_with_types for efficient processing.
+
+        For SceneExpandedDiagram instances, uses the instance's own scene_constraints
+        which are generated by _build_scene_constraints method from point coincidence scenes.
+
+        The constraints format: List of tuples, e.g. [(0,1),(1,None),(None,2)]
+        - constraints[i] represents vertex i
+        - First element represents left, second element represents right
+        - Same number means those positions should use the same point/color indices
+        - None means that side is vector (no point/color to set)
+
+        Example:
+            [(0,1),(1,None),(None,2)] means:
+            - vertex 0: left=0, right=1
+            - vertex 1: left=1, right=None
+            - vertex 2: left=None, right=2
+            - Number 1 appears in vertex 0's right and vertex 1's left, so they use the same indices
+
+        Note:
+            Eigenvector positions (V in V2V, V2P, P2V) must be set to None.
+            Setting a number for an eigenvector position will raise ValueError.
         """
-        if self.scene_constraints is None:
-            return None
-        constraints = self.scene_constraints
-        if not constraints:
+        # For SceneExpandedDiagram, use instance's own scene_constraints if available
+        if self.scene_constraints is not None:
+            constraints = self.scene_constraints
+        else:
             return None
 
-        number_to_positions = {}
-        for vertex_idx, pair in enumerate(constraints):
-            left_id, right_id = pair
-            # Validate against vertex types when available
-            vtype = None
-            if self.vertex_types:
-                # vertex_types is List[List[str]] per contraction group; use group 0
-                group0 = self.vertex_types[0] if self.vertex_types else []
-                if vertex_idx < len(group0):
-                    vtype = group0[vertex_idx]
-            if vtype is not None:
-                if vtype == "V2V" and (left_id is not None or right_id is not None):
-                    raise ValueError(
-                        f"V2V vertex {vertex_idx} cannot have point constraints"
-                    )
-                if vtype == "V2P" and left_id is not None:
-                    raise ValueError(
-                        f"V2P vertex {vertex_idx} left (eigen) must be None"
-                    )
-                if vtype == "P2V" and right_id is not None:
-                    raise ValueError(
-                        f"P2V vertex {vertex_idx} right (eigen) must be None"
-                    )
+        # Step 1: Find positions for each number in constraints and output corresponding vertex_infos
+        number_to_positions = {}  # number -> list of (vertex_idx, side)
+
+        for vertex_idx, (left_id, right_id) in enumerate(constraints):
             if left_id is not None:
-                number_to_positions.setdefault(left_id, []).append(
-                    (vertex_idx, "left")
-                )
+                if left_id not in number_to_positions:
+                    number_to_positions[left_id] = []
+                number_to_positions[left_id].append((vertex_idx, "left"))
+
             if right_id is not None:
-                number_to_positions.setdefault(right_id, []).append(
-                    (vertex_idx, "right")
-                )
+                if right_id not in number_to_positions:
+                    number_to_positions[right_id] = []
+                number_to_positions[right_id].append((vertex_idx, "right"))
 
-        if not number_to_positions or self.vertex_infos is None:
-            return None
+        # Output the mapping information
+        logger.debug("Constraint number to positions mapping:")
+        for number, positions in number_to_positions.items():
+            logger.debug(f"Number {number}: {positions}")
 
-        point_labels_by_id = {}
-        for _number, positions in number_to_positions.items():
-            rep_point = None
-            old_points = set()
+        logger.debug("\nCorresponding vertex_infos:")
+        for number, positions in number_to_positions.items():
+            logger.debug(f"Number {number}:")
             for vertex_idx, side in positions:
-                for group_vertex_infos in self.vertex_infos:
-                    if not isinstance(group_vertex_infos, list):
-                        continue
-                    if vertex_idx >= len(group_vertex_infos):
-                        continue
-                    side_info = group_vertex_infos[vertex_idx].get(side, {})
-                    if "point" not in side_info or side_info["point"] is None:
-                        raise ValueError(
-                            f"Constraint on eigenvector end: vertex {vertex_idx} {side}"
+                found = False
+                # vertex_infos is a List[List[Dict]]: one list per contraction group
+                for group_idx, group_vertex_infos in enumerate(self.vertex_infos):
+                    if isinstance(group_vertex_infos, list) and vertex_idx < len(group_vertex_infos):
+                        vertex_info = group_vertex_infos[vertex_idx]
+                        logger.debug(
+                            f"  Group {group_idx}, Vertex {vertex_idx}, side '{side}': {vertex_info.get(side, 'N/A')}"
                         )
-                    p = side_info["point"]
-                    old_points.add(p)
-                    if rep_point is None:
-                        rep_point = p
-
-            if rep_point is None:
-                continue
-
-            point_labels_by_id[_number] = rep_point
-
-            # Rewrite all subscripts: map every old spatial point in this class to rep
-            for old_p in old_points:
-                if old_p == rep_point:
-                    continue
-                self.subscripts = [
-                    s.replace(old_p, rep_point) for s in self.subscripts
-                ]
-            # Update vertex metadata to the shared spatial-point character.
-            for vertex_idx, side in positions:
-                for group_vertex_infos in self.vertex_infos:
-                    if not isinstance(group_vertex_infos, list):
-                        continue
-                    if vertex_idx >= len(group_vertex_infos):
-                        continue
-                    side_info = group_vertex_infos[vertex_idx].get(side, {})
-                    if "point" in side_info:
-                        side_info["point"] = rep_point
-
-            if self.debug:
-                logger.debug(
-                    f"Unified constraint class to point={rep_point} "
-                    f"for positions {positions}; colors remain independent"
-                )
-
-        self.distinct_point_label_groups = [
-            tuple(point_labels_by_id[point_id] for point_id in point_ids)
-            for point_ids in self.distinct_point_id_groups
-            if len(point_ids) > 1
-        ]
+                        found = True
+                    elif not isinstance(group_vertex_infos, list):
+                        logger.debug(
+                            f"  Group {group_idx}, Vertex {vertex_idx}, side '{side}': unexpected structure"
+                        )
+                if not found:
+                    logger.debug(
+                        f"  Vertex {vertex_idx}, side '{side}': not found in any contraction group"
+                    )
 
 
 class Particle:
@@ -1537,12 +1682,6 @@ class Particle:
 
 
 class Meson(Particle):
-    """
-    Meson interpolator built from V2V elemental O_{i,j}.
-
-    The `elemental` argument is the V2V sector (same object as current-elemental
-    V2V / CurrentElementalV2V). There is no separate meson-only elemental type.
-    """
     def __init__(self, elemental, operator, source) -> None:
         self.elemental = elemental
         self.elemental_data = None
@@ -1556,10 +1695,12 @@ class Meson(Particle):
         # cache is shared among all instances of Meson.
         backend = get_backend()
         self.cache: Dict[int, backend.ndarray] = {}
+        self._cache_identity = None
 
     def _release_resources(self):
         self.elemental_data = None
         self.cache = {}
+        self._cache_identity = None
         gc.collect()
         backend = get_backend()
         if hasattr(backend, "get_default_memory_pool"):
@@ -1592,15 +1733,26 @@ class Meson(Particle):
         return str
 
     def load(self, key, usedNe: int = None):
-        state_changed = self.key != key or self.usedNe != usedNe
-        self.usedNe = usedNe
-        if state_changed:
+        elemental_data = self.elemental.load(key)
+        available_ne = _available_extent(
+            self.elemental, elemental_data, "Ne", (-2, -1)
+        )
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        identity = (
+            key,
+            normalized_ne,
+            _loader_signature(self.elemental, key),
+            _data_signature(elemental_data),
+            _operator_signature(self.operator),
+            bool(self.dagger),
+        )
+        if identity != self._cache_identity:
             self._release_resources()
             self.key = key
-            self.elemental_data = self.elemental.load(key)
-            backend = get_backend()
-            self.cache: Dict[int, backend.ndarray] = {}
+            self.usedNe = normalized_ne
+            self.elemental_data = elemental_data
             self._make_cache()
+            self._cache_identity = identity
 
     def _make_cache(self):
         from lattice.insertion.gamma import gamma
@@ -1669,13 +1821,6 @@ class Meson(Particle):
 
 
 class Current(Meson):
-    """
-    Current operator with V2V/V2P/P2V/P2P matrix elements.
-
-    V2V uses the same elemental object as Meson (current-elemental V2V).
-    Point sectors come from p2v/v2p/p2p loaders under 03.current_elemental_all.*.
-    """
-
     def __init__(
         self,
         elemental,
@@ -1719,6 +1864,7 @@ class Current(Meson):
         self.cache_p2v = {}
         self.cache_p2p = {}
         self.p2p_loaded = None
+        self._disp_reversal_map = None
 
     def release(self):
         self._release_resources()
@@ -1737,50 +1883,40 @@ class Current(Meson):
             pass
 
     def load(self, key, usedNe: int = None, usedNp: int = None):
-        if self.key != key:
-            self.key = key
-            # Load V2V elemental (same object used by Meson; not a second dataset)
-            self.elemental_data = self.elemental.load(key)
-            self.Lt = self.elemental_data.shape[2]
-
-            # NO LONGER LOAD: eigenvector, point, gauge_field
-            # These are only needed if computing on-the-fly
-
-        # Set usedNe and usedNp with defaults from data loaders if not provided
-        self.usedNe = usedNe if usedNe is not None else self.elemental_data.shape[3]
-        # Get usedNp from p2v_data (since v2p now uses p2v via symmetry)
-        self.usedNp = (
-            usedNp
-            if usedNp is not None
-            else (self.p2v_data.Np if self.p2v_data is not None else None)
+        elemental_data = self.elemental.load(key)
+        available_ne = _available_extent(
+            self.elemental, elemental_data, "Ne", (-2, -1)
         )
-
-        # Implementation.md §5.1: reject truncation requests that exceed the
-        # available dataset size instead of silently slicing to a smaller size.
-        available_ne = self.elemental_data.shape[3]
-        if self.usedNe is not None and self.usedNe > available_ne:
+        if self.p2v_data is None:
+            raise ValueError("p2v_data must be provided for Current integration")
+        p2v_ne = getattr(self.p2v_data, "Ne", None)
+        if p2v_ne is not None and int(p2v_ne) != int(available_ne):
             raise ValueError(
-                f"Current.load usedNe={self.usedNe} exceeds available Ne="
-                f"{available_ne} in the elemental V2V dataset"
+                f"elemental Ne={available_ne} conflicts with p2v Ne={p2v_ne}"
             )
         available_np = getattr(self.p2v_data, "Np", None)
-        if (
-            self.usedNp is not None
-            and available_np is not None
-            and self.usedNp > available_np
-        ):
-            raise ValueError(
-                f"Current.load usedNp={self.usedNp} exceeds available Np="
-                f"{available_np} in the point-sector dataset"
-            )
-
-        backend = get_backend()
-        # Cache dictionaries for different propagator types
-        self.cache: Dict[int, backend.ndarray] = {}
-        self.cache_v2p: Dict[int, backend.ndarray] = {}
-        self.cache_p2v: Dict[int, backend.ndarray] = {}
-        self.cache_p2p: Dict[int, Dict[tuple, backend.ndarray] | None] = {}
-        self._make_cache()
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        normalized_np = _normalize_extent(usedNp, available_np, "usedNp")
+        identity = (
+            key,
+            normalized_ne,
+            normalized_np,
+            _loader_signature(self.elemental, key),
+            _loader_signature(self.p2v_data, key),
+            _loader_signature(self.p2p_data, key) if self.p2p_data is not None else None,
+            _data_signature(elemental_data),
+            _operator_signature(self.operator),
+            bool(self.dagger),
+        )
+        if identity != self._cache_identity:
+            self._release_resources()
+            self.key = key
+            self.elemental_data = elemental_data
+            self.Lt = self.elemental_data.shape[2]
+            self.usedNe = normalized_ne
+            self.usedNp = normalized_np
+            self._make_cache()
+            self._cache_identity = identity
 
     def _build_displacement_reversal_map(self):
         """
@@ -1836,19 +1972,10 @@ class Current(Meson):
             logger.debug(f"DEBUG: usedNe={self.usedNe}, usedNp={self.usedNp}")
             logger.debug(f"{'='*80}\n")
 
-        # P2V is always required. V2P may be supplied explicitly by validation
-        # or production datasets; otherwise derive it from reverse P2V using
-        # the documented Hermitian-conjugate relation.
+        # Load p2v data for all time slices (needed for v2p symmetry)
         if self.debug:
-            logger.debug("DEBUG: Loading point-sector elemental data...")
-        p2v_full = self.p2v_data.load(self.key)[
-            :, :, : self.usedNp, :, : self.usedNe
-        ]  # [Lt, num_disp, usedNp, Nc, usedNe]
-        v2p_full = None
-        if self.v2p_data is not None:
-            v2p_full = self.v2p_data.load(self.key)[
-                :, :, : self.usedNe, : self.usedNp, :
-            ]  # [Lt, num_disp, usedNe, usedNp, Nc]
+            logger.debug("DEBUG: Loading p2v data for v2p symmetry calculation...")
+        p2v_full = self.p2v_data.load(self.key)[:]  # [Lt, num_disp, Np, Nc, Ne]
 
         ret_gamma = []
         ret_elemental_v2v = []
@@ -1864,16 +1991,7 @@ class Current(Meson):
                 logger.debug(f"DEBUG: elemental_part has {len(elemental_part)} terms")
 
             for j in range(len(elemental_part)):
-                # Operator terms are (coeff, gaugelink_idx, momentum_idx[, profile])
-                term = elemental_part[j]
-                if len(term) == 4:
-                    elemental_coeff, gaugelink_idx, momentum_idx, _profile = term
-                elif len(term) == 3:
-                    elemental_coeff, gaugelink_idx, momentum_idx = term
-                else:
-                    raise ValueError(
-                        f"Unexpected elemental term length {len(term)}: {term}"
-                    )
+                elemental_coeff, gaugelink_idx, momentum_idx = elemental_part[j]
                 elemental_coeff = complex(elemental_coeff)
                 deriv_mom_tuple_v2v = ("v2v", gaugelink_idx, momentum_idx)
 
@@ -1903,35 +2021,25 @@ class Current(Meson):
                     )
 
                 # p2v: load and accumulate from precomputed data (following v2v pattern)
-                # Point-sector blocks (P2V/V2P/P2P) are momentum-independent
-                # per-point matrix elements (implementation.md 4.2 production
-                # convention); the point-dependent momentum phase e^{ip.x_p} is
-                # not implemented, so only momentum 0 may be used with them.
-                if momentum_idx != 0:
-                    raise NotImplementedError(
-                        "Point-sector current elementals (P2V/V2P/P2P) are "
-                        "momentum-independent in the current production format "
-                        "(03.current_elemental_all.*); momentum_idx != 0 is not "
-                        "implemented. Use momentum (0,0,0) for these sectors."
-                    )
+                # Note: momentum_idx is ignored for p2v (momentum-independent)
                 p2v_data_slice = p2v_full[
-                    :, gaugelink_idx
-                ]  # [Lt, usedNp, Nc, usedNe]
+                    :, gaugelink_idx, : self.usedNp, :, : self.usedNe
+                ]  # [Lt, Np, Nc, Ne]
 
                 if j == 0:
                     ret_elemental_p2v.append(elemental_coeff * p2v_data_slice)
                 else:
                     ret_elemental_p2v[-1] += elemental_coeff * p2v_data_slice
 
-                if v2p_full is not None:
-                    v2p_data_slice = v2p_full[:, gaugelink_idx]
-                else:
-                    # V2P is the bra block. Convert the reverse P2V ket block
-                    # with a Hermitian conjugate, not a plain axis transpose.
-                    reverse_gaugelink_idx = self._disp_reversal_map[gaugelink_idx]
-                    v2p_data_slice = p2v_full[
-                        :, reverse_gaugelink_idx
-                    ].conj().transpose(0, 3, 1, 2)
+                # v2p: compute from p2v using symmetry v2p(disp) = p2v(-disp).transpose(Ne, Np)
+                reverse_gaugelink_idx = self._disp_reversal_map[gaugelink_idx]
+                # Get p2v data with reversed displacement and transpose for v2p shape
+                v2p_data_slice = p2v_full[
+                    :, reverse_gaugelink_idx, : self.usedNp, :, : self.usedNe
+                ]  # [Lt, Np, Nc, Ne]
+                v2p_data_slice = v2p_data_slice.transpose(
+                    0, 3, 1, 2
+                )  # [Lt, Ne, Np, Nc]
 
                 if j == 0:
                     ret_elemental_v2p.append(elemental_coeff * v2p_data_slice)
@@ -1979,12 +2087,10 @@ class Current(Meson):
                     gamma(8),
                 ),
                 contract("xtba->xtab", backend.asarray(ret_elemental_v2v).conj()),
-                dagger_v2p_from_p2v(
-                    backend.asarray(ret_elemental_p2v)
-                ),
-                dagger_p2v_from_v2p(
-                    backend.asarray(ret_elemental_v2p)
-                ),
+                backend.asarray(
+                    ret_elemental_v2p
+                ),  # Pre-converted reverse displacement for v2p
+                backend.asarray(ret_elemental_p2v),  # Direct instructions for p2v
                 ret_elemental_p2p,
             )
         else:
@@ -2119,16 +2225,13 @@ class Current(Meson):
                 self.p2p_loaded[t] = backend.asarray(result_parts)
 
             elemental_stack = self.p2p_loaded[t]
+
             if self.dagger:
-                elemental_stack = dagger_p2p_elemental(elemental_stack)
                 return contract("xij,xpwqz->ijpwqz", self.cache[0], elemental_stack)
             else:
                 return contract("xij,xpwqz->ijpwqz", self.cache[0], elemental_stack)
         else:
-            # Multitime: stack dense P2P operators along the leading time axis
-            t_list = [int(ti) for ti in np.asarray(t).tolist()]
-            pieces = [self.get_p2p(ti) for ti in t_list]
-            return backend.stack(pieces, axis=0)
+            raise NotImplementedError("PSP propagator with array t not yet implemented")
 
 
 class Propagator:
@@ -2140,12 +2243,14 @@ class Propagator:
         self.cache = None
         self.cache_dagger = None
         self.cached_time = None
+        self._cache_identity = None
 
     def _release_resources(self):
         self.perambulator_data = None
         self.cache = None
         self.cache_dagger = None
         self.cached_time = None
+        self._cache_identity = None
         gc.collect()
         backend = get_backend()
         if hasattr(backend, "get_default_memory_pool"):
@@ -2171,59 +2276,26 @@ class Propagator:
             pass
 
     def load(self, key, usedNe: int = None):
-        state_changed = self.key != key or self.usedNe != usedNe
-        if state_changed:
+        perambulator_data = self.perambulator.load(key)
+        available_ne = _available_extent(
+            self.perambulator, perambulator_data, "Ne", (-2, -1)
+        )
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        identity = (
+            key,
+            normalized_ne,
+            _loader_signature(self.perambulator, key),
+            _data_signature(perambulator_data),
+        )
+        if identity != self._cache_identity:
+            self._release_resources()
             self.key = key
-            self.usedNe = usedNe
-            self.perambulator_data = self.perambulator.load(key)
-            self.cache = None
-            self.cache_dagger = None
-            self.cached_time = None
-
-    def _relative_time_index(self, cache, t_from, t_to):
-        """Map (t_from -> t_to) onto a relative-time perambulator cache.
-
-        Timeslice files store only delta_t in [0, Dt), where Dt = cache.shape[0]
-        (often Dt < Lt). Indexing with (t_to - t_from) % Lt without this check
-        either raises or (on some backends) silently wraps, which corrupts
-        blending/highmode contractions that request full Lt sinks.
-        """
-        rel = (t_to - t_from) % self.Lt
-        dt_extent = int(cache.shape[0])
-        rel_check = rel.get() if hasattr(rel, "get") else rel
-        rel_check = np.asarray(rel_check)
-        if np.any(rel_check >= dt_extent):
-            bad = np.asarray(rel_check)[np.asarray(rel_check) >= dt_extent]
-            raise IndexError(
-                f"Relative time index {bad.tolist()[:5]}... exceeds perambulator "
-                f"Dt={dt_extent} (Lt={self.Lt}). Only delta_t in [0, {dt_extent}) "
-                f"are stored; restrict sink times in the contraction driver."
-            )
-        return cache[rel]
+            self.usedNe = normalized_ne
+            self.perambulator_data = perambulator_data
+            self._cache_identity = identity
 
     def get(self, t_source, t_sink):
         from lattice.insertion.gamma import gamma
-
-        if getattr(self.perambulator_data, "supports_absolute_times", False):
-            backend = get_backend()
-            if isinstance(t_source, (int, np.integer)):
-                out = backend.asarray(
-                    self.perambulator_data.get_absolute(t_source, t_sink)
-                )
-                return out[..., : self.usedNe, : self.usedNe]
-            if isinstance(t_sink, (int, np.integer)):
-                reverse = backend.asarray(
-                    self.perambulator_data.get_absolute(t_sink, t_source)
-                )
-                reverse = reverse[..., : self.usedNe, : self.usedNe]
-                scalar = reverse.ndim == 4
-                if scalar:
-                    reverse = reverse[None, ...]
-                out = contract(
-                    "ik,tlkba,lj->tijab", gamma(15), reverse.conj(), gamma(15)
-                )
-                return out[0] if scalar else out
-            raise ValueError("At least one VSV time must be scalar")
 
         if isinstance(t_source, int) and isinstance(t_sink, int):
             if self.cached_time != t_source and self.cached_time != t_sink:
@@ -2235,9 +2307,9 @@ class Propagator:
                 )
                 self.cached_time = t_source
             if self.cached_time == t_source:
-                return self._relative_time_index(self.cache, t_source, t_sink)
+                return self.cache[(t_sink - t_source) % self.Lt]
             else:
-                return self._relative_time_index(self.cache_dagger, t_sink, t_source)
+                return self.cache_dagger[(t_source - t_sink) % self.Lt]
         elif isinstance(t_source, int):
             if self.cached_time != t_source:
                 self.cache = self.perambulator_data[
@@ -2247,7 +2319,7 @@ class Propagator:
                     "ik,tlkba,lj->tijab", gamma(15), self.cache.conj(), gamma(15)
                 )
                 self.cached_time = t_source
-            return self._relative_time_index(self.cache, t_source, t_sink)
+            return self.cache[(t_sink - t_source) % self.Lt]
         elif isinstance(t_sink, int):
             if self.cached_time != t_sink:
                 self.cache = self.perambulator_data[
@@ -2257,7 +2329,7 @@ class Propagator:
                     "ik,tlkba,lj->tijab", gamma(15), self.cache.conj(), gamma(15)
                 )
                 self.cached_time = t_sink
-            return self._relative_time_index(self.cache_dagger, t_sink, t_source)
+            return self.cache_dagger[(t_source - t_sink) % self.Lt]
         else:
             raise ValueError("At least t_source or t_sink should be int")
 
@@ -2268,13 +2340,42 @@ class PropagatorLocal:
         self.key = None
         self.Lt = Lt
         self.cache = None
+        self._cache_identity = None
+
+    def _release_resources(self):
+        self.perambulator_data = None
+        self.cache = None
+        self._cache_identity = None
+
+    def release(self):
+        self._release_resources()
+        self.key = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.release()
 
     def load(self, key, usedNe: int = None):
-        if self.key != key:
+        perambulator_data = self.perambulator.load(key)
+        available_ne = _available_extent(
+            self.perambulator, perambulator_data, "Ne", (-2, -1)
+        )
+        normalized_ne = _normalize_extent(usedNe, available_ne, "usedNe")
+        identity = (
+            key,
+            normalized_ne,
+            _loader_signature(self.perambulator, key),
+            _data_signature(perambulator_data),
+        )
+        if identity != self._cache_identity:
+            self._release_resources()
             self.key = key
-            self.perambulator_data = self.perambulator.load(key)
-            self.usedNe = usedNe
+            self.perambulator_data = perambulator_data
+            self.usedNe = normalized_ne
             self._make_cache()
+            self._cache_identity = identity
 
     def _make_cache(self):
         self.cache = self.perambulator_data[0, :, :, :, : self.usedNe, : self.usedNe]
@@ -2375,19 +2476,68 @@ class PropagatorWithCurrent(Propagator):
         # Simple cache for single t_source, value shape: [Lt, Ns, Ns, Np_snk, Nc, Np_src, Nc]
         self.tilde_S_psp_cache = None
         self.tilde_S_psp_cached_time = None
-        # Last identical PSP high-mode request. Scene expansion calls
-        # get_PSP_highmode once per scene with the same (t_src, t_snk);
-        # the relative-time cache is disabled for absolute-time slabs.
-        self._last_psp_highmode = None
+        self.tilde_S_psp_dagger = None
+
+    def _release_current_caches(self):
+        self.vsp_cache = None
+        self.vsp_dagger = None
+        self.vsp_cached_time = None
+        self.psv_cache = None
+        self.psv_dagger = None
+        self.psv_cached_time = None
+        self.psp_cache = None
+        self.psp_dagger = None
+        self.psp_cached_time = None
+        self.tilde_S_psv_cache = None
+        self.tilde_S_psv_cached_time = None
+        self.tilde_S_psv_dagger = None
+        self.tilde_S_vsp_cache = None
+        self.tilde_S_vsp_cached_time = None
+        self.tilde_S_vsp_dagger = None
+        self.tilde_S_psp_cache = None
+        self.tilde_S_psp_cached_time = None
+        self.tilde_S_psp_dagger = None
+
+    def _current_loader_identity(self, key):
+        return tuple(
+            _loader_signature(loader, key) if loader is not None else None
+            for loader in (
+                self.perambulator,
+                self.vsp_propagator,
+                self.psv_propagator,
+                self.psp_propagator,
+                self.overlap_matrix,
+            )
+        )
+
+    def _validate_current_extents(self, usedNe, usedNp):
+        available_ne = None
+        available_np = None
+        for loader, role in (
+            (self.perambulator, "vsv"),
+            (self.vsp_propagator, "vsp"),
+            (self.psv_propagator, "psv"),
+            (self.psp_propagator, "psp"),
+            (self.overlap_matrix, "overlap"),
+        ):
+            loader_ne, loader_np = _loader_extents(loader, role)
+            if loader_ne is not None:
+                if available_ne is None:
+                    available_ne = loader_ne
+                elif available_ne != loader_ne:
+                    raise ValueError("propagator inputs have inconsistent Ne")
+            if loader_np is not None:
+                if available_np is None:
+                    available_np = loader_np
+                elif available_np != loader_np:
+                    raise ValueError("propagator inputs have inconsistent Np")
+        return (
+            _normalize_extent(usedNe, available_ne, "usedNe"),
+            _normalize_extent(usedNp, available_np, "usedNp"),
+        )
 
     def load(self, key, usedNe: int = None, usedNp: int = None):
-        state_changed = (
-            self.key != key
-            or self.usedNe != usedNe
-            or self.usedNp != usedNp
-        )
-        self.usedNe = usedNe
-        self.usedNp = usedNp
+        """Load data from all available propagators. Slicing is deferred to get-time (like parent)."""
         if self.debug:
             log_gpu_memory(f"PropagatorWithCurrent.load(before, key={key})")
             logger.debug(f"\n{'='*80}")
@@ -2403,17 +2553,26 @@ class PropagatorWithCurrent(Propagator):
             logger.debug(f"    PSV (psv_propagator): {self.psv_propagator is not None}")
             logger.debug(f"    PSP (psp_propagator): {self.psp_propagator is not None}")
 
-        if state_changed:
+        normalized_ne, normalized_np = self._validate_current_extents(usedNe, usedNp)
+        identity = (
+            key,
+            normalized_ne,
+            normalized_np,
+            self._current_loader_identity(key),
+        )
+        if identity != self._cache_identity:
             if self.debug:
-                logger.debug(f"\n  Load state changed, loading new data...")
+                logger.debug(f"\n  Cache identity changed, loading data...")
+            self._release_resources()
+            self._release_current_caches()
 
-            # Load VSV via parent. Parent defers slicing to get().
+            # Load VSV via parent using the normalized Ne.
             if self.perambulator is not None:
                 if self.debug:
                     logger.debug(f"  Loading VSV via parent...")
                     log_gpu_memory("load_VSV(before)")
                 try:
-                    super().load(key, usedNe)
+                    super().load(key, normalized_ne)
                     if self.debug:
                         log_gpu_memory("load_VSV(after)")
                         if (
@@ -2504,21 +2663,14 @@ class PropagatorWithCurrent(Propagator):
                 if self.debug:
                     logger.debug(f"  Loading overlap matrix from file...")
                     log_gpu_memory("load_overlap_matrix(before)")
-                self.overlap_matrix_data = self.overlap_matrix.load(key)[
-                    :,
-                    : self.usedNe if self.usedNe is not None else None,
-                    : self.usedNp if self.usedNp is not None else None,
-                    :,
-                ]
+                self.overlap_matrix_data = self.overlap_matrix.load(key)[:]
                 if self.debug:
                     logger.debug(
                         f"    overlap_matrix_data.shape: {self.overlap_matrix_data.shape}"
                     )
                     log_gpu_memory("load_overlap_matrix(after)")
             else:
-                self.overlap_matrix_data = None
-                if self.debug:
-                    logger.debug("  Skipping overlap matrix (not provided)")
+                raise ValueError("overlap_matrix must be provided")
 
             # Clear high mode caches when key changes
             if self.debug:
@@ -2532,14 +2684,14 @@ class PropagatorWithCurrent(Propagator):
             # tilde_S_psp is simple cache for single t_source
             self.tilde_S_psp_cache = None
             self.tilde_S_psp_cached_time = None
-            self._last_psp_highmode = None
             if self.debug:
                 log_gpu_memory("clear_caches(after)")
 
-            # Update key and usedNe/usedNp
+            # Update identity only after every input has loaded successfully.
             self.key = key
-            self.usedNe = usedNe
-            self.usedNp = usedNp
+            self.usedNe = normalized_ne
+            self.usedNp = normalized_np
+            self._cache_identity = identity
 
             if self.debug:
                 logger.debug(f"\n  Load completed successfully")
@@ -2550,7 +2702,7 @@ class PropagatorWithCurrent(Propagator):
                 log_gpu_memory(f"PropagatorWithCurrent.load(after, key={key})")
         else:
             if self.debug:
-                logger.debug(f"  Key unchanged, skipping load")
+                logger.debug(f"  Cache identity unchanged, skipping load")
                 logger.debug(f"{'='*80}\n")
                 log_gpu_memory(f"PropagatorWithCurrent.load(skipped, key={key})")
 
@@ -2591,15 +2743,7 @@ class PropagatorWithCurrent(Propagator):
         self.psv_data = None
         self.psp_data = None
         self.overlap_matrix_data = None
-        # Clear high mode caches
-        self.tilde_S_psv_cache = None
-        self.tilde_S_psv_cached_time = None
-        self.tilde_S_psv_dagger = None
-        self.tilde_S_vsp_cache = None
-        self.tilde_S_vsp_cached_time = None
-        self.tilde_S_vsp_dagger = None
-        self.tilde_S_psp_cache = None
-        self.tilde_S_psp_cached_time = None
+        self._release_current_caches()
 
     def _apply_gamma_on_spin(self, array_with_spin_first_two_axes):
         """
@@ -2632,8 +2776,8 @@ class PropagatorWithCurrent(Propagator):
         Output: PSV tail order [..., Np, Nc, Ne]
         """
         spun = self._apply_gamma_on_spin(vsp_block)  # keeps same shape
-        # Move tail axes from (Ne, Np, Nc) -> (Np, Nc, Ne)
-        return spun[:, :, :, :, 1, 2, 0] if False else spun.transpose(0, 1, 2, 4, 5, 3)
+        # Swap sink/source spin axes and move tail (Ne, Np, Nc) -> (Np, Nc, Ne).
+        return spun.transpose(0, 2, 1, 4, 5, 3)
 
     def _dagger_psv(self, psv_block):
         """
@@ -2643,98 +2787,23 @@ class PropagatorWithCurrent(Propagator):
         Output: VSP tail order [..., Ne, Np, Nc]
         """
         spun = self._apply_gamma_on_spin(psv_block)
-        # Move tail axes from (Np, Nc, Ne) -> (Ne, Np, Nc)
-        return spun.transpose(0, 1, 2, 5, 3, 4)
+        # Swap sink/source spin axes and move tail (Np, Nc, Ne) -> (Ne, Np, Nc).
+        return spun.transpose(0, 2, 1, 5, 3, 4)
 
     def _dagger_psp(self, psp_block):
         """
         Apply dagger (gamma(15) conjugate) to PSP data.
 
-        Input: PSP tail order [..., Np_snk, Nc_snk, Np_src, Nc_src]
-        Output: Swapped ordering [..., Np_src, Nc_src, Np_snk, Nc_snk]
-        Spin axes are transposed so that S(t_src, t_snk) = gamma5 S(t_snk, t_src)^dagger gamma5.
+        Input: PSP tail order [..., Np_snk, Nc, Np_src, Nc]
+        Output: Swapped ordering [..., Np_src, Nc, Np_snk, Nc]
         """
         spun = self._apply_gamma_on_spin(psp_block)
-        if spun.ndim == 6:
-            return spun.transpose(1, 0, 4, 5, 2, 3)
-        return spun.transpose(0, 2, 1, 5, 6, 3, 4)
-
-    def _get_psv_absolute(self, t_source, t_sink):
-        """Read raw PSV for absolute source/sink times from source-time files."""
-        backend = get_backend()
-        if self.psv_data is None:
-            raise ValueError("PSV propagator is required")
-        if getattr(self.psv_data, "supports_absolute_times", False):
-            if isinstance(t_source, (int, np.integer)):
-                out = backend.asarray(
-                    self.psv_data.get_absolute(int(t_source), t_sink)
-                )
-            else:
-                source_times = np.asarray(t_source, dtype=np.int64)
-                if isinstance(t_sink, (int, np.integer)):
-                    sink_times = np.full(source_times.shape, int(t_sink))
-                else:
-                    sink_times = np.asarray(t_sink, dtype=np.int64)
-                if source_times.shape != sink_times.shape:
-                    raise ValueError("PSV source/sink arrays must have matching shapes")
-                pieces = [
-                    backend.asarray(
-                        self.psv_data.get_absolute(int(source), int(sink))
-                    )
-                    for source, sink in zip(source_times.flat, sink_times.flat)
-                ]
-                out = backend.stack(pieces, axis=0).reshape(
-                    source_times.shape + tuple(pieces[0].shape)
-                )
-            return out[
-                ...,
-                : self.usedNp if self.usedNp is not None else None,
-                :,
-                : self.usedNe if self.usedNe is not None else None,
-            ]
-        source_scalar = isinstance(t_source, (int, np.integer))
-        sink_scalar = isinstance(t_sink, (int, np.integer))
-        if source_scalar:
-            source = int(t_source)
-            data = self.psv_data[source]
-            data = data[
-                ...,
-                : self.usedNp if self.usedNp is not None else None,
-                :,
-                : self.usedNe if self.usedNe is not None else None,
-            ]
-            relative_sink = (np.asarray(t_sink, dtype=np.int64) - source) % self.Lt
-            return data[relative_sink]
-        source_times = np.asarray(t_source, dtype=np.int64)
-        sink_times = np.asarray(t_sink, dtype=np.int64)
-        if sink_scalar:
-            sink_times = np.full(source_times.shape, int(t_sink), dtype=np.int64)
-        if source_times.shape != sink_times.shape:
-            raise ValueError("PSV source/sink time arrays must have matching shapes")
-        pieces = []
-        for source, sink in zip(source_times.flat, sink_times.flat):
-            data = self.psv_data[int(source)]
-            data = data[
-                ...,
-                : self.usedNp if self.usedNp is not None else None,
-                :,
-                : self.usedNe if self.usedNe is not None else None,
-            ]
-            pieces.append(data[(int(sink) - int(source)) % self.Lt])
-        return backend.stack(pieces, axis=0).reshape(
-            source_times.shape + tuple(pieces[0].shape)
-        )
-
-    def _dagger_psv_any(self, psv):
-        scalar = psv.ndim == 5
-        if scalar:
-            psv = psv[None, ...]
-        result = self._dagger_psv(psv)
-        return result[0] if scalar else result
+        # Swap the two point axes (positions 3 and 5 in tail)
+        return spun.transpose(0, 1, 2, 5, 4, 3, 6)
 
     def get_VSP(self, t_source, t_sink, cache=True):
         """
-        Reconstruct VSP exclusively from reverse PSV using gamma5 hermiticity.
+        Get VSP propagator data with two-time interface mirroring Propagator.get.
 
         Args:
             t_source: Source time (int or array-like)
@@ -2745,10 +2814,6 @@ class PropagatorWithCurrent(Propagator):
             If both times are int: [Ns, Ns, Ne, Np, Nc] or [Ns, Ns, Np, Nc, Ne] (if dagger->PSV)
             If one time is int and the other is array-like: [t, Ns, Ns, ...] with same tail ordering
         """
-        if self.psv_data is not None:
-            return self._dagger_psv_any(
-                self._get_psv_absolute(t_sink, t_source)
-            )
         if self.debug:
             logger.debug(f"\nPropagatorWithCurrent.get_VSP() called:")
             logger.debug(f"  t_source: {t_source} (type: {type(t_source).__name__})")
@@ -2901,8 +2966,6 @@ class PropagatorWithCurrent(Propagator):
             If both times are int: [Ns, Ns, Np, Nc, Ne]
             If one time is int and the other is array-like: [t, Ns, Ns, Np, Nc, Ne]
         """
-        if self.psv_data is not None:
-            return self._get_psv_absolute(t_source, t_sink)
         if self.debug:
             logger.debug(f"\nPropagatorWithCurrent.get_PSV() called:")
             logger.debug(f"  t_source: {t_source} (type: {type(t_source).__name__})")
@@ -3069,20 +3132,6 @@ class PropagatorWithCurrent(Propagator):
             raise ValueError(
                 "PSP propagator not provided but is required for this diagram"
             )
-        if getattr(self.psp_data, "supports_absolute_times", False):
-            backend = get_backend()
-            if isinstance(t_source, (int, np.integer)):
-                out = backend.asarray(self.psp_data.get_absolute(t_source, t_sink))
-            elif isinstance(t_sink, (int, np.integer)):
-                reverse = backend.asarray(
-                    self.psp_data.get_absolute(t_sink, t_source)
-                )
-                out = self._dagger_psp(reverse)
-            else:
-                raise ValueError("At least one PSP time must be scalar")
-            if getattr(self, "usedNp", None) is not None:
-                out = out[..., : self.usedNp, :, : self.usedNp, :]
-            return out
         if isinstance(t_source, int) and isinstance(t_sink, int):
             # Check if we have cached data
             if self.psp_cached_time == t_source:
@@ -3196,34 +3245,9 @@ class PropagatorWithCurrent(Propagator):
         else:
             raise ValueError("At least t_source or t_sink should be int")
 
-    @staticmethod
-    def _time_cache_key(time):
-        if isinstance(time, (int, np.integer)):
-            return ("i", int(time))
-        arr = np.asarray(time).reshape(-1)
-        return ("a", tuple(int(v) for v in arr))
-
-    def _psp_highmode_cache_key(self, t_source, t_sink, usedNe_sink, usedNe_source):
-        return (
-            self._time_cache_key(t_source),
-            self._time_cache_key(t_sink),
-            None if usedNe_sink is None else int(usedNe_sink),
-            None if usedNe_source is None else int(usedNe_source),
-            None if getattr(self, "usedNe", None) is None else int(self.usedNe),
-            None if getattr(self, "usedNp", None) is None else int(self.usedNp),
-        )
-
-    def _cached_psp_highmode(self, key):
-        last = getattr(self, "_last_psp_highmode", None)
-        if last is not None and last[0] == key:
-            return last[1]
-        return None
-
-    def _store_psp_highmode(self, key, value):
-        self._last_psp_highmode = (key, value)
-        return value
-
-    def get_VSP_highmode(self, t_source, t_sink, usedNe_source=None):
+    def get_VSP_highmode(
+        self, t_source, t_sink, usedNe_source=None, *, usedNe_sink=None
+    ):
         """
         Get VSP high-mode (eigen->point, projected) propagator.
 
@@ -3242,13 +3266,18 @@ class PropagatorWithCurrent(Propagator):
         Returns:
             Same shape as get_VSP: [Ns, Ns, Ne, Np, Nc] or [t, Ns, Ns, Ne, Np, Nc]
         """
-        # Use self.usedNe if not specified
-        if usedNe_source is None:
-            usedNe_source = self.usedNe
+        # VSP's output eigen index belongs to the sink; its subtraction index belongs to the source.
+        usedNe_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
+        usedNe_sink = _normalize_extent(
+            usedNe_sink, self.usedNe, "usedNe_sink"
+        )
 
-        # If usedNe_source == 0, return unprojected
         if usedNe_source == 0:
-            return self.get_VSP(t_source, t_sink)
+            return self.get_VSP(t_source, t_sink, cache=False)[
+                ..., :usedNe_sink, :, :
+            ]
 
         log_gpu_memory(
             f"get_VSP_highmode(before, t_source={t_source}, t_sink={t_sink})"
@@ -3261,15 +3290,17 @@ class PropagatorWithCurrent(Propagator):
         backend = get_backend()
 
         # Determine caching strategy
-        should_cache_highmode = usedNe_source == self.usedNe
-        should_cache_unprojected = usedNe_source != self.usedNe
+        should_cache_highmode = (
+            usedNe_source == self.usedNe and usedNe_sink == self.usedNe
+        )
+        should_cache_unprojected = not should_cache_highmode
         is_single_time = isinstance(t_source, int) and isinstance(t_sink, int)
         if is_single_time:
             should_cache_highmode = False
             should_cache_unprojected = True
 
         # Check highmode cache (only when should_cache_highmode and is_single_time)
-        if usedNe_source == self.usedNe:
+        if should_cache_highmode:
             if is_single_time:
                 t_rel = (t_sink - t_source) % self.Lt
                 if self.tilde_S_vsp_cached_time == t_source:
@@ -3279,14 +3310,19 @@ class PropagatorWithCurrent(Propagator):
                     t_rel = (t_source - t_sink) % self.Lt
                     return self.tilde_S_psv_dagger[t_rel]
             else:
-                # Multi-time results are returned in t_sink/t_source request order
-                # (same as get_VSP), not delta_t order. Skip cache here to avoid
-                # mixing layouts or caching partial sink chunks.
-                pass
-        # Get original VSP: S_{i,xa}. The sink eigen axis is independent of
-        # usedNe_source (the point-end current's low-mode count). Truncating it
-        # here would silently cut a meson interpolator that keeps more modes.
+                if isinstance(t_source, int):
+                    t_rel = (t_sink - t_source) % self.Lt
+                    if self.tilde_S_vsp_cached_time == t_source:
+                        return self.tilde_S_vsp_cache[t_rel]
+                else:
+                    t_rel = (t_source - t_sink) % self.Lt
+                    if self.tilde_S_vsp_cached_time == t_sink:
+                        return self.tilde_S_psv_dagger[t_rel]
+        # Get original VSP: S_{i,xa}
+        # Cache unprojected when usedNe != self.usedNe (because we won't cache highmode)
+        # Don't cache when usedNe == self.usedNe (because highmode result will be cached)
         S_vsp = self.get_VSP(t_source, t_sink, cache=should_cache_unprojected)
+        S_vsp = S_vsp[..., :usedNe_sink, :, :]
 
         # Get VSV: S_{i,j}
         S_vsv = self.get(t_source, t_sink)
@@ -3295,9 +3331,8 @@ class PropagatorWithCurrent(Propagator):
         M_full = self.overlap_matrix_data[
             :, : self.usedNe, : self.usedNp, :
         ]  # [Lt, Ne, Np, Nc]
-        M = M_full[:, :usedNe_source, :, :] if usedNe_source != self.usedNe else M_full
+        M = M_full[:, :usedNe_source, :, :]
         M_conj = M.conj()
-        S_vsv_source = _slice_vsv_source_modes(S_vsv, usedNe_source)
 
         if is_single_time:
             M_conj_t = M_conj[t_source]  # [Ne, Np, Nc]
@@ -3307,42 +3342,60 @@ class PropagatorWithCurrent(Propagator):
             # M_conj_t: [Ne_j, Np_x, Nc_c] where M_{jx,c}^* = <xi_j| eta_x,c>
             #   Index order: j (Ne, 0th), x (Np, 1st), c (Nc, 2nd)
             # Result: [Ns_snk, Ns_src, Ne_i, Np_x, Nc_c]
-            correction = contract("abij,jxc->abixc", S_vsv_source, M_conj_t)
+            correction = contract(
+                "abij,jxc->abixc",
+                S_vsv[:, :, :usedNe_sink, :usedNe_source],
+                M_conj_t,
+            )
 
             # tilde{S} = S - correction
             tilde_S = S_vsp - correction
             log_gpu_memory(f"get_VSP_highmode(after, single_time)")
             return tilde_S
         else:
-            # Multi-time case.
-            # S_vsp/S_vsv are already in request order from get_VSP/get
-            # (aligned with the multitime t_sink or t_source array). Do NOT
-            # reindex with t_rel — that double-applies the time permutation.
+            # Multi-time case
             if isinstance(t_source, int):
+                t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
                 M_conj_t = M_conj[t_source]  # [Ne, Np, Nc]
                 correction = contract(
                     "tabij,jxc->tabixc",
-                    S_vsv_source,
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                     M_conj_t,
                 )
                 tilde_S = S_vsp - correction
+                if should_cache_highmode:
+                    if self.debug:
+                        logger.debug(f"caching full tilde_S_vsp for t_source={t_source}")
+                    self.tilde_S_vsp_cache = tilde_S
+                    self.tilde_S_vsp_dagger = self._dagger_vsp(tilde_S)
+                    self.tilde_S_vsp_cached_time = t_source
                 log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_source=int)")
-                return tilde_S
+                return tilde_S[t_rel]
             else:  # t_sink is int
-                t_src_arr = backend.asarray(t_source) % self.Lt
-                M_conj_t = M_conj[t_src_arr]  # [t, Ne, Np, Nc] at each source time
+                t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
+                M_conj_t = M_conj[t_rel]  # [Lt, Ne, Np, Nc]
                 correction = contract(
                     "tabij,tjxc->tabixc",
-                    S_vsv_source,
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                     M_conj_t,
                 )
                 tilde_S = S_vsp - correction
+                if should_cache_highmode:
+                    if self.debug:
+                        logger.debug(f"caching full tilde_S_vsp for t_source={t_source}")
+                    self.tilde_S_psv_dagger = tilde_S
+                    self.tilde_S_psv_cache = self._dagger_vsp(tilde_S)
+                    self.tilde_S_psv_cached_time = t_sink
+                    return self.tilde_S_psv_dagger
                 if self.debug:
                     logger.debug(f"  tilde_S_vsp shape: {tilde_S.shape}")
-                log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_sink=int)")
-                return tilde_S
 
-    def get_PSV_highmode(self, t_source, t_sink, usedNe_sink=None):
+                log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_sink=int)")
+                return tilde_S[t_rel]
+
+    def get_PSV_highmode(
+        self, t_source, t_sink, usedNe_sink=None, *, usedNe_source=None
+    ):
         """
         Get PSV high-mode (point->eigen, projected) propagator.
 
@@ -3362,13 +3415,16 @@ class PropagatorWithCurrent(Propagator):
         Returns:
             Same shape as get_PSV: [Ns, Ns, Np, Nc, Ne] or [t, Ns, Ns, Np, Nc, Ne]
         """
-        # Use self.usedNe if not specified
-        if usedNe_sink is None:
-            usedNe_sink = self.usedNe
+        # PSV's output eigen index belongs to the source; its subtraction index belongs to the sink.
+        usedNe_sink = _normalize_extent(usedNe_sink, self.usedNe, "usedNe_sink")
+        usedNe_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
 
-        # If usedNe_sink == 0, return unprojected
         if usedNe_sink == 0:
-            return self.get_PSV(t_source, t_sink)
+            return self.get_PSV(t_source, t_sink, cache=False)[
+                ..., :usedNe_source
+            ]
 
         log_gpu_memory(
             f"get_PSV_highmode(before, t_source={t_source}, t_sink={t_sink})"
@@ -3381,17 +3437,17 @@ class PropagatorWithCurrent(Propagator):
         backend = get_backend()
 
         # Determine caching strategy
-        # Cache highmode only when usedNe == self.usedNe
-        should_cache_highmode = usedNe_sink == self.usedNe
-        # Cache unprojected when usedNe != self.usedNe (won't cache highmode)
-        should_cache_unprojected = usedNe_sink != self.usedNe
+        should_cache_highmode = (
+            usedNe_sink == self.usedNe and usedNe_source == self.usedNe
+        )
+        should_cache_unprojected = not should_cache_highmode
         is_single_time = isinstance(t_source, int) and isinstance(t_sink, int)
         if is_single_time:
             should_cache_highmode = False
             should_cache_unprojected = True
 
         # Check cache only if should_cache_highmode and is_single_time
-        if usedNe_sink == self.usedNe:
+        if should_cache_highmode:
             if is_single_time:
                 if self.tilde_S_psv_cached_time == t_source:
                     t_rel = (t_sink - t_source) % self.Lt
@@ -3405,12 +3461,22 @@ class PropagatorWithCurrent(Propagator):
                     t_rel = (t_source - t_sink) % self.Lt
                     return self.tilde_S_vsp_dagger[t_rel]
             else:
-                # Multi-time request order != delta_t cache layout; skip cache.
-                pass
+                if isinstance(t_source, int):
+                    t_rel = (t_sink - t_source) % self.Lt
+                    if self.tilde_S_psv_cached_time == t_source:
+                        if self.debug:
+                            logger.debug(f"  Using cached tilde_S_psv")
+                        return self.tilde_S_psv_cache[t_rel]
+                else:
+                    t_rel = (t_source - t_sink) % self.Lt
+                    if self.tilde_S_psv_cached_time == t_sink:
+                        if self.debug:
+                            logger.debug(f"  Using cached tilde_S_vsp_dagger")
+                        return self.tilde_S_vsp_dagger[t_rel]
 
-        # Get original PSV: S_{xa,i}. The source eigen axis belongs to the
-        # vector endpoint and must not be truncated to usedNe_sink.
+        # Get original PSV: S_{xa,i} (cache unprojected when usedNe != self.usedNe)
         S_psv = self.get_PSV(t_source, t_sink, cache=should_cache_unprojected)
+        S_psv = S_psv[..., :usedNe_source]
 
         # Get VSV: S_{j,i}
         S_vsv = self.get(t_source, t_sink)
@@ -3419,8 +3485,7 @@ class PropagatorWithCurrent(Propagator):
         M_full = self.overlap_matrix_data[
             :, : self.usedNe, : self.usedNp, :
         ]  # [Lt, Ne, Np, Nc]
-        M = M_full[:, :usedNe_sink, :, :] if usedNe_sink != self.usedNe else M_full
-        S_vsv_sink = _slice_vsv_sink_modes(S_vsv, usedNe_sink)
+        M = M_full[:, :usedNe_sink, :, :]
 
         if is_single_time:
             M_t = M[t_sink]  # [Ne, Np, Nc]
@@ -3433,18 +3498,21 @@ class PropagatorWithCurrent(Propagator):
             #   j is sink/eigenvector (Ne, 2nd), i is source/eigenvector (Ne, 3rd)
             # S_psv: [Ns, Ns, Np, Nc, Ne] where S_psv[s1, s2, x, c, i] = S_{xc,i} = <eta_x,c| S |xi_i>
             # Contract j: sum_j M_t[j, x, c] * S_vsv[s1, s2, j, i] -> [s1, s2, x, c, i]
-            correction = contract("jxc,abji->abxci", M_t, S_vsv_sink)
+            correction = contract(
+                "jxc,abji->abxci",
+                M_t,
+                S_vsv[:, :, :usedNe_sink, :usedNe_source],
+            )
 
             # tilde{S} = S - correction
             tilde_S = S_psv - correction
             log_gpu_memory(f"get_PSV_highmode(after, single_time)")
             return tilde_S
         else:
-            # Multi-time case: keep request order from get_PSV/get; overlap at
-            # the actual sink times in that same order.
+            # Multi-time case
             if isinstance(t_source, int):
-                t_snk_arr = backend.asarray(t_sink) % self.Lt
-                M_t = M[t_snk_arr]  # [t, Ne, Np, Nc] at each sink time
+                t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
+                M_t = M[t_rel]  # [t, Ne, Np, Nc]
 
                 # M_t: [t, Ne, Np, Nc] where M_t[t, j, x, c] = M_{xj,c} = <eta_x,c| xi_j>
                 #   Index order: t (Lt, 0th), j (Ne, 1st), x (Np, 2nd), c (Nc, 3rd)
@@ -3454,22 +3522,39 @@ class PropagatorWithCurrent(Propagator):
                 correction = contract(
                     "tjxc,tabji->tabxci",
                     M_t,
-                    S_vsv_sink,
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                 )
                 tilde_S = S_psv - correction
+                if should_cache_highmode:
+                    if self.debug:
+                        logger.debug(f"caching full tilde_S_psv for t_source={t_source}")
+                    self.tilde_S_psv_cache = tilde_S
+                    self.tilde_S_psv_dagger = self._dagger_psv(tilde_S)
+                    self.tilde_S_psv_cached_time = t_source
                 log_gpu_memory(f"get_PSV_highmode(after, multi_time, t_source=int)")
-                return tilde_S
+                return tilde_S[t_rel]
             else:  # t_sink is int
-                M_t = M[t_sink]  # [Ne, Np, Nc] at fixed sink
-                # M_t: [Ne, Np, Nc]; S_vsv/S_psv leading axis follows t_source array
+                t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
+                M_t = M[t_sink]  # [t, Ne, Np, Nc]
+                # M_t: [t, Ne, Np, Nc] where M_t[t, j, x, c] = M_{xj,c} = <eta_x,c| xi_j>
+                #   Index order: t (Lt, 0th), j (Ne, 1st), x (Np, 2nd), c (Nc, 3rd)
+                # S_vsv: [t, Ns, Ns, Ne, Ne] where S_{j,i} = <xi_j| S |xi_i>
+                #   Index order: t, s1, s2, j (sink, 3rd), i (source, 4th)
+                # Contract j: sum_j M_t[t, j, x, c] * S_vsv[t, s1, s2, j, i] -> [t, s1, s2, x, c, i]
                 correction = contract(
-                    "jxc,tabji->tabxci",
+                    "tjxc,abji->tabxci",
                     M_t,
-                    S_vsv_sink,
+                    S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                 )
                 tilde_S = S_psv - correction
+                if should_cache_highmode:
+                    if self.debug:
+                        logger.debug(f"caching full tilde_S_psv for t_source={t_source}")
+                    self.tilde_S_psv_cache = tilde_S
+                    self.tilde_S_psv_dagger = self._dagger_psv(tilde_S)
+                    self.tilde_S_psv_cached_time = t_source
                 log_gpu_memory(f"get_PSV_highmode(after, multi_time, t_sink=int)")
-                return tilde_S
+                return tilde_S[t_rel]
 
     def get_PSP_highmode(self, t_source, t_sink, usedNe_sink=None, usedNe_source=None):
         """
@@ -3492,24 +3577,16 @@ class PropagatorWithCurrent(Propagator):
         Returns:
             Array shape: [Ns, Ns, Np_snk, Nc, Np_src, Nc] or [t, Ns, Ns, Np_snk, Nc, Np_src, Nc]
         """
-        # Use self.usedNe if not specified
-        if usedNe_sink is None:
-            usedNe_sink = self.usedNe
-        if usedNe_source is None:
-            usedNe_source = self.usedNe
-
-        cache_key = self._psp_highmode_cache_key(
-            t_source, t_sink, usedNe_sink, usedNe_source
+        usedNe_sink = _normalize_extent(
+            usedNe_sink, self.usedNe, "usedNe_sink"
         )
-        cached = self._cached_psp_highmode(cache_key)
-        if cached is not None:
-            return cached
+        usedNe_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
 
         # If no eigenvectors, return unprojected
         if (usedNe_sink == 0) and (usedNe_source == 0):
-            return self._store_psp_highmode(
-                cache_key, self.get_PSP(t_source, t_sink)
-            )
+            return self.get_PSP(t_source, t_sink)
 
         log_gpu_memory(
             f"get_PSP_highmode(before, t_source={t_source}, t_sink={t_sink})"
@@ -3527,8 +3604,6 @@ class PropagatorWithCurrent(Propagator):
         should_cache_highmode = (
             usedNe_sink == self.usedNe and usedNe_source == self.usedNe
         )
-        if getattr(self.psp_data, "supports_absolute_times", False):
-            should_cache_highmode = False
         # Cache unprojected when any usedNe != self.usedNe (won't cache highmode)
         should_cache_unprojected = (
             usedNe_sink != self.usedNe or usedNe_source != self.usedNe
@@ -3539,21 +3614,28 @@ class PropagatorWithCurrent(Propagator):
             should_cache_unprojected = True
 
         # Check cache only when should_cache_highmode
-        if should_cache_highmode:
+        if usedNe_sink == self.usedNe and usedNe_source == self.usedNe:
             if is_single_time:
                 if self.tilde_S_psp_cached_time == t_source:
                     t_rel = (t_sink - t_source) % self.Lt
-                    return self._store_psp_highmode(
-                        cache_key, self.tilde_S_psp_cache[t_rel]
-                    )
+                    return self.tilde_S_psp_cache[t_rel]
                 elif self.tilde_S_psp_cached_time == t_sink:
                     t_rel = (t_source - t_sink) % self.Lt
-                    return self._store_psp_highmode(
-                        cache_key, self.tilde_S_psp_dagger[t_rel]
-                    )
+                    return self.tilde_S_psp_dagger[t_rel]
             else:
-                # Multi-time request order != delta_t cache layout; skip cache.
-                pass
+                # Multi-time case
+                if isinstance(t_source, int):
+                    t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
+                    if self.tilde_S_psp_cached_time == t_source:
+                        if self.debug:
+                            logger.debug(f"  Using cached tilde_S_psp")
+                        return self.tilde_S_psp_cache[t_rel]
+                else:  # t_sink is int
+                    t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
+                    if self.tilde_S_psp_cached_time == t_sink:
+                        if self.debug:
+                            logger.debug(f"  Using cached tilde_S_psp (dagger)")
+                        return self.tilde_S_psp_dagger[t_rel]
 
         # Get original PSP: S_{xa,yb}
         S_psp = self.get_PSP(t_source, t_sink, cache=should_cache_unprojected)
@@ -3566,13 +3648,12 @@ class PropagatorWithCurrent(Propagator):
             S_psv = S_psv[..., :usedNe_source]
 
         # Get tilde VSP for mixed term 2: tilde{S}_{i,yb}
-        # High-mode VSP keeps the loaded sink eigen axis; I_low at the sink
-        # current only inserts usedNe_sink of those modes.
         S_vsp_tilde = self.get_VSP_highmode(
-            t_source, t_sink, usedNe_source=usedNe_source
+            t_source,
+            t_sink,
+            usedNe_source=usedNe_source,
+            usedNe_sink=usedNe_sink,
         )
-        if usedNe_sink != self.usedNe:
-            S_vsp_tilde = _slice_vsp_sink_modes(S_vsp_tilde, usedNe_sink)
 
         # Get overlap matrix M (full) and slice for sink and source
         M_full = self.overlap_matrix_data[
@@ -3626,36 +3707,19 @@ class PropagatorWithCurrent(Propagator):
                 # Contract j: sum_j S_psv[a, b, x, c, j] * M_source_t[j, y, d] -> [a, b, x, c, y, d]
                 # Note: c is sink color, d is source color (two independent color dimensions)
                 term3 = contract(
-                    "abxcj,jyd->abxcyd", S_psv[..., :usedNe_source], M_source_t
+                    "abxcj,jyd->abxcyd", S_psv[:, :, :, :, :usedNe_source], M_source_t
                 )
 
             # Combine: tilde{S} = term1 - term2 - term3
             tilde_S = term1 - term2 - term3
             log_gpu_memory(f"get_PSP_highmode(after, single_time)")
         else:
-            # Multi-time case: overlap factors follow the actual sink/source
-            # times in request order (same as S_psp / S_psv / S_vsp_tilde).
+            # Multi-time case
             term1 = S_psp
             if isinstance(t_source, int):
-                t_snk_arr = backend.asarray(t_sink) % self.Lt
-                M_sink_t = M_sink[t_snk_arr]  # [t, Ne_sink, Np, Nc]
+                t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
+                M_sink_t = M_sink[t_rel]  # [Ne_sink, Np, Nc]
                 M_source_t = M_source[t_source]  # [Ne_source, Np, Nc]
-                if usedNe_sink == 0:
-                    term2 = 0
-                else:
-                    term2 = contract("tixc,tabiyd->tabxcyd", M_sink_t, S_vsp_tilde)
-                if usedNe_source == 0:
-                    term3 = 0
-                else:
-                    term3 = contract(
-                        "tabxcj,jyd->tabxcyd",
-                        S_psv[..., :usedNe_source],
-                        M_source_t,
-                    )
-            else:  # t_sink is int
-                t_src_arr = backend.asarray(t_source) % self.Lt
-                M_sink_t = M_sink[t_sink]  # [Ne_sink, Np, Nc]
-                M_source_t = M_source[t_src_arr]  # [t, Ne_source, Np, Nc]
                 if usedNe_sink == 0:
                     term2 = 0
                 else:
@@ -3664,17 +3728,46 @@ class PropagatorWithCurrent(Propagator):
                     term3 = 0
                 else:
                     term3 = contract(
-                        "tabxcj,tjyd->tabxcyd",
-                        S_psv[..., :usedNe_source],
+                        "abxcj,jyd->tabxcyd",
+                        S_psv[:, :, :, :, :usedNe_source],
+                        M_source_t,
+                    )
+            else:  # t_sink is int
+                t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
+                M_sink_t = M_sink[t_sink]  # [Ne_sink, Np, Nc]
+                M_source_t = M_source[t_rel]  # [Ne_source, Np, Nc]
+                if usedNe_sink == 0:
+                    term2 = 0
+                else:
+                    term2 = contract("ixc,abiyd->tabxcyd", M_sink_t, S_vsp_tilde)
+                if usedNe_source == 0:
+                    term3 = 0
+                else:
+                    term3 = contract(
+                        "abxcj,tjyd->tabxcyd",
+                        S_psv[:, :, :, :, :usedNe_source],
                         M_source_t,
                     )
             tilde_S = term1 - term2 - term3
+            if should_cache_highmode:
+                if isinstance(t_source, int):
+                    if self.debug:
+                        logger.debug(f"caching full tilde_S_psp for t_source={t_source}")
+                    self.tilde_S_psp_cache = tilde_S
+                    self.tilde_S_psp_dagger = self._dagger_psp(tilde_S)
+                    self.tilde_S_psp_cached_time = t_source
+                else:  # t_sink is int
+                    if self.debug:
+                        logger.debug(f"caching full tilde_S_psp for t_sink={t_sink}")
+                    self.tilde_S_psp_cache = self._dagger_psp(tilde_S)
+                    self.tilde_S_psp_dagger = tilde_S
+                    self.tilde_S_psp_cached_time = t_sink
 
         log_gpu_memory(f"get_PSP_highmode(after, multi_time)")
         if self.debug:
             logger.debug(f"  tilde_S_psp shape: {tilde_S.shape}")
 
-        return self._store_psp_highmode(cache_key, tilde_S)
+        return tilde_S
 
 
 def compute_diagrams_multitime(
@@ -3684,7 +3777,6 @@ def compute_diagrams_multitime(
     propagator_list: List[Propagator],
     multitime_shape: int = False,
     debug: bool = False,
-    per_scene: bool = False,
 ):
     """
     Compute diagram values with automatic sampling weight application.
@@ -3699,40 +3791,23 @@ def compute_diagrams_multitime(
     - k = number of distinct points in this scene
 
     After computing each diagram's contraction, the result is multiplied by its
-    scene_weight.
-
-    Return semantics (implementation.md 8.2): by default (per_scene=False) the
-    return value is "one value per input diagram with all states and scenes
-    already summed and weighted": scalar diagrams -> shape (num_diagrams, ...),
-    multitime -> shape (num_diagrams, T, ...). Pass per_scene=True to get the
-    raw per-scene contributions (one entry per scene-level diagram), which is a
-    debug/diagnostic view, not the final correlator.
+    scene_weight. The final result is the sum of all weighted scene contributions.
 
     See localized_blending.md for mathematical formulation.
     """
     backend = get_backend()
 
-    # Auto-expand to scene-level diagrams when available, tracking which input
-    # diagram each scene-level diagram derives from.
-    input_scene_bounds = []  # (start, end) index range into diagrams_to_compute
+    # Auto-expand diagrams if they have vertex_list and expanded_diagrams
     diagrams_to_compute = []
     for diagram in diagrams:
-        start = len(diagrams_to_compute)
         if hasattr(diagram, "expanded_diagrams") and diagram.expanded_diagrams:
             if debug:
                 logger.debug(
-                    f"Auto-expanding diagram into {len(diagram.expanded_diagrams)} state diagrams"
+                    f"Auto-expanding diagram into {len(diagram.expanded_diagrams)} diagrams"
                 )
-            for sed in diagram.expanded_diagrams:
-                if getattr(sed, "scene_diagrams", None):
-                    diagrams_to_compute.extend(sed.scene_diagrams)
-                else:
-                    diagrams_to_compute.append(sed)
-        elif getattr(diagram, "scene_diagrams", None):
-            diagrams_to_compute.extend(diagram.scene_diagrams)
+            diagrams_to_compute.extend(diagram.expanded_diagrams)
         else:
             diagrams_to_compute.append(diagram)
-        input_scene_bounds.append((start, len(diagrams_to_compute)))
 
     if debug and len(diagrams_to_compute) != len(diagrams):
         logger.debug(
@@ -3817,7 +3892,10 @@ def compute_diagrams_multitime(
                         # VSP: sink=vector, source=point
                         # get_VSP_highmode handles usedNe_source=0 internally
                         prop_data = propagator.get_VSP_highmode(
-                            time_list[item[1]], time_list[item[2]], usedNe_source
+                            time_list[item[1]],
+                            time_list[item[2]],
+                            usedNe_source=usedNe_source,
+                            usedNe_sink=usedNe_sink,
                         )
                         if debug:
                             logger.debug(
@@ -3833,7 +3911,10 @@ def compute_diagrams_multitime(
                         # PSV: sink=point, source=vector
                         # get_PSV_highmode handles usedNe_sink=0 internally
                         prop_data = propagator.get_PSV_highmode(
-                            time_list[item[1]], time_list[item[2]], usedNe_sink
+                            time_list[item[1]],
+                            time_list[item[2]],
+                            usedNe_sink=usedNe_sink,
+                            usedNe_source=usedNe_source,
                         )
                         if debug:
                             logger.debug(
@@ -3942,20 +4023,8 @@ def compute_diagrams_multitime(
                     have_multitime = True
                 idx += 1
 
-            for point_labels in getattr(diagram, "distinct_point_label_groups", []):
-                for left_point, right_point in product(point_labels, repeat=2):
-                    if left_point >= right_point:
-                        continue
-                    operands_data.append(
-                        _distinct_point_mask(backend, diagram.usedNp)
-                    )
-                    subscripts.append(left_point + right_point)
-
             if not have_multitime:
-                # All-scalar time_list: implementation.md §8.1 requires the output
-                # to carry no time axis. Only synthesize a constant "t" axis when
-                # a time array actually exists (multi_time is not None).
-                if multitime_shape and multi_time is not None:
+                if multitime_shape:
                     subscripts.append("t")
                     operands_data.append([1] * len(multi_time))
                     subscripts[-1] = subscripts[-1] + "->t"
@@ -3980,29 +4049,17 @@ def compute_diagrams_multitime(
                     f"  Contraction successful! Result shape: {result.shape if hasattr(result, 'shape') else type(result)}"
                 )
 
-        # Apply per-scene sampling weight when present
-        if hasattr(diagram, "scene_weight") and diagram.scene_weight is not None:
-            diagram_value[-1] = diagram_value[-1] * diagram.scene_weight
+        # Apply scene_weight if this diagram has sampling weight
+        if hasattr(diagram, "scene_weights") and diagram.scene_weights:
+            scene_weight = diagram.scene_weights[0]
+            diagram_value[-1] = diagram_value[-1] * scene_weight
             if debug:
-                logger.debug(f"\n  Applied scene_weight: {diagram.scene_weight}")
+                logger.debug(f"\n  Applied scene_weight: {scene_weight}")
                 logger.debug(
                     f"  Final diagram value shape: {diagram_value[-1].shape if hasattr(diagram_value[-1], 'shape') else type(diagram_value[-1])}"
                 )
 
-    scene_values = backend.asarray(diagram_value)
-    if per_scene:
-        # Debug/diagnostic view: one weighted value per scene-level diagram.
-        return scene_values
-
-    # Implementation.md 8.2 (default): aggregate all states/scenes per input
-    # diagram into a single weighted value, shape (num_diagrams, ...).
-    aggregated = []
-    for start, end in input_scene_bounds:
-        total = scene_values[start]
-        for index in range(start + 1, end):
-            total = total + scene_values[index]
-        aggregated.append(total)
-    return backend.stack(aggregated, axis=0)
+    return backend.asarray(diagram_value)
 
 
 def compute_diagrams(

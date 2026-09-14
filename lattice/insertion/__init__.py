@@ -555,3 +555,9 @@ class InsertionGaugeLink(Insertion):
                         )
                     else:
                         self.rows.append(Row([gamma[j], derivative[k], gamma[k], derivative[j]]))
+
+from .current import (
+    Current, CurrentTerm, LocalVectorCurrent, LocalAxialCurrent,
+    ConservedVectorCurrent, PseudoScalarDensity, lattice_divergence,
+    verify_wt, verify_pcac,
+)
