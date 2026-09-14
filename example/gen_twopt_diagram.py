@@ -5,7 +5,17 @@ os.environ["CUTENSOR_PATH"] = "/dg_hpc/LQCD/jiangxiangyu/libcutensor-local-repo-
 
 from lattice import set_backend, get_backend
 
-set_backend("cupy")
+try:
+    set_backend("cupy")
+    import cupy
+
+    cupy.cuda.runtime.getDeviceCount()  # probe: raises when CUDA is unusable
+    if cupy.cuda.runtime.getDeviceCount() == 0:
+        raise RuntimeError("no CUDA device")
+except Exception:
+    # These examples were written for the GPU cluster; on a CPU-only machine
+    # fall back so the rest of the example still runs (slowly).
+    set_backend("numpy")
 
 Lt = 128
 

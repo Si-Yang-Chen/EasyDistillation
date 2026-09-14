@@ -2,7 +2,17 @@ from lattice.backend import set_backend, get_backend
 
 from time import perf_counter
 
-set_backend("cupy")
+try:
+    set_backend("cupy")
+    import cupy
+
+    cupy.cuda.runtime.getDeviceCount()  # probe: raises when CUDA is unusable
+    if cupy.cuda.runtime.getDeviceCount() == 0:
+        raise RuntimeError("no CUDA device")
+except Exception:
+    # These examples were written for the GPU cluster; on a CPU-only machine
+    # fall back so the rest of the example still runs (slowly).
+    set_backend("numpy")
 
 from lattice import Dispatch, preset
 from lattice.insertion.mom_dict import momDict_mom9
@@ -46,13 +56,18 @@ perambulator_charm = preset.PerambulatorNpy(
 )
 
 # define diagrams: adjcency matrix
+# These four matrices are contraction *terms* sharing one four-slot vertex list
+# [D_src, Ds_src, D_snk, Ds_snk]: a slot with no lines in this term is contracted
+# in another term of the same batch, so the quark-link assertion (which applies
+# to a complete diagram) is switched off here.
 D_D = QuarkDiagram(
     [
         [0, 0, 1, 0],
         [0, 0, 0, 0],
         [2, 0, 0, 0],
         [0, 0, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 Ds_Ds = QuarkDiagram(
     [
@@ -60,7 +75,8 @@ Ds_Ds = QuarkDiagram(
         [0, 0, 0, 2],
         [0, 0, 0, 0],
         [0, 1, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 DDsbar_DDsbar_direct = QuarkDiagram(
     [
@@ -68,7 +84,8 @@ DDsbar_DDsbar_direct = QuarkDiagram(
         [0, 0, 0, 2],
         [2, 0, 0, 0],
         [0, 1, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 DDsbar_DDsbar_cross = QuarkDiagram(
     [
@@ -76,7 +93,8 @@ DDsbar_DDsbar_cross = QuarkDiagram(
         [3, 0, 0, 0],
         [0, 0, 0, 3],
         [0, 2, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 
 chic1_DDs = QuarkDiagram(
@@ -85,7 +103,8 @@ chic1_DDs = QuarkDiagram(
         [0, 0, 0, 0],
         [0, 0, 0, 3],
         [1, 0, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 
 chic1_Jpsi_eta = QuarkDiagram(
@@ -94,7 +113,8 @@ chic1_Jpsi_eta = QuarkDiagram(
         [0, 0, 0, 0],
         [1, 0, 0, 0],
         [0, 0, 0, 3],
-    ]
+    ],
+    validate=False,
 )
 
 line_light = Propagator(perambulator_light, Nt)

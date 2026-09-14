@@ -1,6 +1,16 @@
 from lattice.backend import set_backend, get_backend
 
-set_backend("cupy")
+try:
+    set_backend("cupy")
+    import cupy
+
+    cupy.cuda.runtime.getDeviceCount()  # probe: raises when CUDA is unusable
+    if cupy.cuda.runtime.getDeviceCount() == 0:
+        raise RuntimeError("no CUDA device")
+except Exception:
+    # These examples were written for the GPU cluster; on a CPU-only machine
+    # fall back so the rest of the example still runs (slowly).
+    set_backend("numpy")
 
 from lattice import Dispatch, preset
 from lattice.insertion.mom_dict import momDict_mom9
@@ -34,13 +44,18 @@ perambulator_charm = preset.PerambulatorBinary(
     "/dg_hpc/LQCD/DATA/light.20200720.b20.16_128/03.perambulator.charm/", ".charm.peram", [128, 128, 4, 4, 70, 70], 70
 )
 
+# These four matrices are contraction *terms* sharing one four-slot vertex list
+# [D_src, Ds_src, D_snk, Ds_snk]: a slot with no lines in this term is contracted
+# in another term of the same batch, so the quark-link assertion (which applies
+# to a complete diagram) is switched off here.
 D_D = QuarkDiagram(
     [
         [0, 0, 1, 0],
         [0, 0, 0, 0],
         [2, 0, 0, 0],
         [0, 0, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 Ds_Ds = QuarkDiagram(
     [
@@ -48,7 +63,8 @@ Ds_Ds = QuarkDiagram(
         [0, 0, 0, 2],
         [0, 0, 0, 0],
         [0, 1, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 DDsbar_DDsbar_direct = QuarkDiagram(
     [
@@ -56,7 +72,8 @@ DDsbar_DDsbar_direct = QuarkDiagram(
         [0, 0, 0, 2],
         [2, 0, 0, 0],
         [0, 1, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 DDsbar_DDsbar_cross = QuarkDiagram(
     [
@@ -64,7 +81,8 @@ DDsbar_DDsbar_cross = QuarkDiagram(
         [3, 0, 0, 0],
         [0, 0, 0, 3],
         [0, 2, 0, 0],
-    ]
+    ],
+    validate=False,
 )
 # Some extra examples for {\chi_{c1}}\to{D}{D^*} and {\chi_{c1}\to}
 # chic1_DDs = QuarkDiagram([

@@ -211,7 +211,7 @@ class OperatorDisplacement(Operator):
         super().__init__(name, insertion_rows, coefficients)
         for irow in range(len(self.parts) // 2):
             for iterm, term in enumerate(self.parts[2 * irow + 1]):
-                coeff, derivative_idx, momentum = term
+                coeff, derivative_idx, momentum, _profile = term
                 assert (
                     derivative_idx == 0
                 ), f"displacement operator cannot define at derivative_idx = {derivative_idx}, not 0"

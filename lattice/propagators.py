@@ -495,7 +495,8 @@ class Current(Meson):
                 logger.debug(f"DEBUG: elemental_part has {len(elemental_part)} terms")
 
             for j in range(len(elemental_part)):
-                elemental_coeff, gaugelink_idx, momentum_idx = elemental_part[j]
+                # parts terms are [coeff, link/derivative idx, momentum, profile]
+                elemental_coeff, gaugelink_idx, momentum_idx, _profile = elemental_part[j]
                 elemental_coeff = complex(elemental_coeff)
                 deriv_mom_tuple_v2v = ("v2v", gaugelink_idx, momentum_idx)
 
