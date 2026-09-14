@@ -54,6 +54,7 @@ __all__ = [
     "calculate_sampling_weight",
     "enumerate_point_scenes",
     "partition_to_constraints",
+    "vertex_type_from_matrix",
 ]
 
 logger = logging.getLogger(__name__)
@@ -2515,6 +2516,37 @@ def diagram_simplify(expr: Union[Expr, List, Any]) -> Union[Expr, List, Any]:
     # Other types of expressions remain unchanged
     else:
         return sp.simplify(expr)
+
+
+def vertex_type_from_matrix(adjacency_matrix, vertex_idx):
+    """Infer whether a vertex is a meson or a baryon from the adjacency matrix.
+
+    Mirrors the sizing done in ``quark_contract`` below, which builds each
+    ``matrix[i][j]`` as ``[[0] * N for _ in range(M)]`` — shape ``(M, N)``, where
+    the *column* dimension ``N`` belongs to vertex ``i`` and the row dimension
+    ``M`` belongs to vertex ``j``::
+
+        i=baryon, j=baryon -> (3, 3)
+        i=baryon, j=meson  -> (1, 3)   # columns belong to i
+        i=meson,  j=baryon -> (3, 1)
+        i=meson,  j=meson  -> scalar
+
+    A baryon carries three quark lines, so it is exactly the vertex whose row
+    holds an entry with a three-wide column dimension. Mesons never reach 3.
+
+    Reading the row dimension instead of the column silently misclassifies every
+    meson in a mixed diagram; ``test_quark_draw.py`` pins all four combinations,
+    so a change to the construction order fails a test instead of silently
+    drawing the wrong vertex shape.
+    """
+    for other in range(len(adjacency_matrix)):
+        path = adjacency_matrix[vertex_idx][other]
+        if not isinstance(path, list) or not path:
+            continue
+        first = path[0]
+        if isinstance(first, list) and len(first) == 3:
+            return "baryon"
+    return "meson"
 
 
 def remove_unexpected_diagram(expr: Union[Expr, List, Any], condition: Callable):

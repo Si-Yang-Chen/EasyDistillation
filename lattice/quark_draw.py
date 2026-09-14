@@ -3,6 +3,8 @@ from feynman.diagrams import Diagram
 from feynman import Operator, Vertex
 import matplotlib.pyplot as plt
 
+from lattice.quark_diagram import vertex_type_from_matrix
+
 fig = plt.figure(figsize=(6, 6))
 ax = fig.add_subplot(111)
 
@@ -218,6 +220,52 @@ def is_row_col_zero(matrix, i):
     col_all_zero = all(matrix[row][i] == 0 for row in range(len(matrix)))
 
     return row_all_zero and col_all_zero
+
+
+def _vertex_attributes_from_diagram(diagram):
+    """Derive ``vertex_attribute_list`` from a quark-diagram ``Diagram``.
+
+    A ``lattice.quark_diagram.Diagram`` already carries everything the drawing
+    code needs: ``diagram.diagram.adjacency_matrix`` for the graph, and a
+    ``vertex_list`` of ``HadronIrrepRow`` whose ``dagger`` flag gives the source
+    /sink side and whose ``hadron_name`` gives the label.
+    """
+    adjacency_matrix = diagram.diagram.adjacency_matrix
+    vertex_attribute_list = []
+    for idx, vertex in enumerate(diagram.vertex_list):
+        vertex_attribute_list.append(
+            dict(
+                pos="src" if vertex.dagger else "snk",
+                type=vertex_type_from_matrix(adjacency_matrix, idx),
+                name=rf"${vertex.hadron_name}$",
+            )
+        )
+    return adjacency_matrix, vertex_attribute_list
+
+
+def draw_quark_diagram(diagram, line_color_list=None, save_path=None):
+    """Draw a quark diagram straight from a ``Diagram`` object.
+
+    Unlike ``draw_single_diagram``, everything but the colours is read off the
+    diagram itself: the adjacency matrix from ``diagram.diagram`` and the
+    per-vertex side and label from ``diagram.vertex_list``.
+
+    Args:
+        diagram: a ``lattice.quark_diagram.Diagram`` instance.
+        line_color_list: colour per propagator, indexed as in the adjacency
+            matrix. Defaults to all ``None`` (the figure's default colour).
+        save_path: optional path passed through to ``draw_single_diagram``.
+    """
+    adjacency_matrix, vertex_attribute_list = _vertex_attributes_from_diagram(diagram)
+    if line_color_list is None:
+        num_propagators = max(
+            [p for row in adjacency_matrix for p in row if isinstance(p, int)],
+            default=0,
+        )
+        line_color_list = [None] * (num_propagators + 1)
+    return draw_single_diagram(
+        adjacency_matrix, vertex_attribute_list, line_color_list, save_path
+    )
 
 
 def draw_multi_diagrams(adjacency_matrix_list, vertex_attribute_list, line_color_list, save_path=None):
