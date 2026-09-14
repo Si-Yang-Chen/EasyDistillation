@@ -60,6 +60,9 @@ include = ["lattice*"]
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["."]
+# test/scripts/ holds exploratory scripts whose names start with test_ but which
+# are not pytest tests; keep the collector out of that directory.
+norecursedirs = ["test/scripts"]
 markers = [
     "gpu: tests requiring GPU (CuPy)",
     "mpi: tests requiring MPI (mpi4py/PyQuda)",

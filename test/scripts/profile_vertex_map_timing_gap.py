@@ -6,13 +6,13 @@ Usage (on machine with elemental data):
   cd EasyDistillation
 
   # Only build irrep_vertices.pkl (same as gen_correlator_p1_T2pp prepare, slow):
-  python test/profile_vertex_map_timing_gap.py --only-build-irrep-pkl
+  python test/scripts/profile_vertex_map_timing_gap.py --only-build-irrep-pkl
 
   # Profile with full T2pp vertex list (auto-build pkl if missing):
-  python test/profile_vertex_map_timing_gap.py --use-t2pp --cfg 4460
+  python test/scripts/profile_vertex_map_timing_gap.py --use-t2pp --cfg 4460
 
   # Quick test with 10 vertices from pkl:
-  python test/profile_vertex_map_timing_gap.py --use-t2pp --cfg 4460 --n-sample 10
+  python test/scripts/profile_vertex_map_timing_gap.py --use-t2pp --cfg 4460 --n-sample 10
 
   # Full T2pp replica: prepare + one cfg bind, then exit (same code as production):
   python gen_correlator_p1_T2pp.py --cfg 4460 --stop-after-bind
@@ -32,7 +32,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # Heavy imports deferred until GPU tests (after --skip-gpu check in main).
 
-DEFAULT_IRREP_PKL = os.path.join(os.path.dirname(__file__), "irrep_vertices_t2pp.pkl")
+# The pickle fixtures live in test/, one level above this scripts/ directory.
+DEFAULT_IRREP_PKL = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "irrep_vertices_t2pp.pkl",
+)
 
 DATA_ROOT = os.environ.get(
     "LQCD_DATA_ROOT",

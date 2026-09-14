@@ -10,8 +10,8 @@ import sys
 
 import numpy as np
 
-# Permit ``python test/current_conservation_cpu_precheck.py`` from any cwd in this repo.
-ROOT = Path(__file__).resolve().parents[1]
+# Permit ``python test/scripts/current_conservation_cpu_precheck.py`` from any cwd in this repo.
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
