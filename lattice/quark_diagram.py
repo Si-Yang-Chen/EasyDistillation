@@ -2294,6 +2294,27 @@ class Propagator:
             self.perambulator_data = perambulator_data
             self._cache_identity = identity
 
+    def _relative_time_index(self, cache, t_from, t_to):
+        """Map (t_from -> t_to) onto a relative-time perambulator cache.
+
+        Timeslice files store only delta_t in [0, Dt), where Dt = cache.shape[0]
+        (often Dt < Lt). Indexing with (t_to - t_from) % Lt without this check
+        either raises or (on some backends) silently wraps, which corrupts
+        blending/highmode contractions that request full Lt sinks.
+        """
+        rel = (t_to - t_from) % self.Lt
+        dt_extent = int(cache.shape[0])
+        rel_check = rel.get() if hasattr(rel, "get") else rel
+        rel_check = np.asarray(rel_check)
+        if np.any(rel_check >= dt_extent):
+            bad = np.asarray(rel_check)[np.asarray(rel_check) >= dt_extent]
+            raise IndexError(
+                f"Relative time index {bad.tolist()[:5]}... exceeds perambulator "
+                f"Dt={dt_extent} (Lt={self.Lt}). Only delta_t in [0, {dt_extent}) "
+                f"are stored; restrict sink times in the contraction driver."
+            )
+        return cache[rel]
+
     def get(self, t_source, t_sink):
         from lattice.insertion.gamma import gamma
 
@@ -2307,9 +2328,9 @@ class Propagator:
                 )
                 self.cached_time = t_source
             if self.cached_time == t_source:
-                return self.cache[(t_sink - t_source) % self.Lt]
+                return self._relative_time_index(self.cache, t_source, t_sink)
             else:
-                return self.cache_dagger[(t_source - t_sink) % self.Lt]
+                return self._relative_time_index(self.cache_dagger, t_sink, t_source)
         elif isinstance(t_source, int):
             if self.cached_time != t_source:
                 self.cache = self.perambulator_data[
@@ -2319,7 +2340,7 @@ class Propagator:
                     "ik,tlkba,lj->tijab", gamma(15), self.cache.conj(), gamma(15)
                 )
                 self.cached_time = t_source
-            return self.cache[(t_sink - t_source) % self.Lt]
+            return self._relative_time_index(self.cache, t_source, t_sink)
         elif isinstance(t_sink, int):
             if self.cached_time != t_sink:
                 self.cache = self.perambulator_data[
@@ -2329,7 +2350,7 @@ class Propagator:
                     "ik,tlkba,lj->tijab", gamma(15), self.cache.conj(), gamma(15)
                 )
                 self.cached_time = t_sink
-            return self.cache_dagger[(t_source - t_sink) % self.Lt]
+            return self._relative_time_index(self.cache_dagger, t_sink, t_source)
         else:
             raise ValueError("At least t_source or t_sink should be int")
 
@@ -2477,6 +2498,9 @@ class PropagatorWithCurrent(Propagator):
         self.tilde_S_psp_cache = None
         self.tilde_S_psp_cached_time = None
         self.tilde_S_psp_dagger = None
+        # Last identical PSP high-mode request (scene expansion calls
+        # get_PSP_highmode once per scene with the same (t_src, t_snk)).
+        self._last_psp_highmode = None
 
     def _release_current_caches(self):
         self.vsp_cache = None
@@ -2497,6 +2521,34 @@ class PropagatorWithCurrent(Propagator):
         self.tilde_S_psp_cache = None
         self.tilde_S_psp_cached_time = None
         self.tilde_S_psp_dagger = None
+        self._last_psp_highmode = None
+
+    @staticmethod
+    def _time_cache_key(time):
+        if isinstance(time, (int, np.integer)):
+            return ("i", int(time))
+        arr = np.asarray(time).reshape(-1)
+        return ("a", tuple(int(v) for v in arr))
+
+    def _psp_highmode_cache_key(self, t_source, t_sink, usedNe_sink, usedNe_source):
+        return (
+            self._time_cache_key(t_source),
+            self._time_cache_key(t_sink),
+            None if usedNe_sink is None else int(usedNe_sink),
+            None if usedNe_source is None else int(usedNe_source),
+            None if getattr(self, "usedNe", None) is None else int(self.usedNe),
+            None if getattr(self, "usedNp", None) is None else int(self.usedNp),
+        )
+
+    def _cached_psp_highmode(self, key):
+        last = getattr(self, "_last_psp_highmode", None)
+        if last is not None and last[0] == key:
+            return last[1]
+        return None
+
+    def _store_psp_highmode(self, key, value):
+        self._last_psp_highmode = (key, value)
+        return value
 
     def _current_loader_identity(self, key):
         return tuple(
@@ -3557,6 +3609,23 @@ class PropagatorWithCurrent(Propagator):
                 return tilde_S[t_rel]
 
     def get_PSP_highmode(self, t_source, t_sink, usedNe_sink=None, usedNe_source=None):
+        """Return the PSP high-mode propagator, reusing an identical last request."""
+        normalized_sink = _normalize_extent(usedNe_sink, self.usedNe, "usedNe_sink")
+        normalized_source = _normalize_extent(
+            usedNe_source, self.usedNe, "usedNe_source"
+        )
+        cache_key = self._psp_highmode_cache_key(
+            t_source, t_sink, normalized_sink, normalized_source
+        )
+        cached = self._cached_psp_highmode(cache_key)
+        if cached is not None:
+            return cached
+        value = self._compute_PSP_highmode(
+            t_source, t_sink, normalized_sink, normalized_source
+        )
+        return self._store_psp_highmode(cache_key, value)
+
+    def _compute_PSP_highmode(self, t_source, t_sink, usedNe_sink=None, usedNe_source=None):
         """
         Get PSP propagator with high mode projection applied.
 
