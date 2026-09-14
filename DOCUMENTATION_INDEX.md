@@ -37,8 +37,8 @@
 
 ### 高级主题
 - [传统 Distillation 工作流](docs/DISTILLATION_WORKFLOW.md) - 逐步工作流与完整示例
-- [矢量流两点收缩流程](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/WORKFLOW_ANALYSIS.md) - 基于 `4.contraction.py` 的 Localized Blending 流程
-- [局域混合](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/localized_blending/localized_blending.md) - 理论、实现与附录索引
+- [矢量流两点收缩流程](WORKFLOW_ANALYSIS.md) - 基于 `4.contraction.py` 的 Localized Blending 流程
+- [局域混合](doc/localized_blending/localized_blending.md) - 理论、实现与附录索引
 
 ---
 
@@ -68,8 +68,8 @@
 - [收缩测试](test/test_quark_contract.py)
 
 ### 集成测试
-- [流算符收缩](/public/home/siyangchen/qedinf/experiments/localized-blending/test/test_current_contraction.py)
-- [对称性验证](/public/home/siyangchen/qedinf/experiments/localized-blending/test/test_v2p_p2v_symmetry.py)
+- [流算符收缩](test/test_current_contraction.py)
+- [对称性验证](test/test_v2p_p2v_symmetry.py)
 
 ---
 
@@ -124,7 +124,7 @@
 | **两点函数** | [示例](example/gen_twopt.py) |
 | **三点函数** | [流算符示例](example/gen_two_particle_corr.py) |
 | **Gamma矩阵** | [测试](test/test_gamma.py) |
-| **对称性** | [对称性验证](/public/home/siyangchen/qedinf/experiments/localized-blending/test/test_v2p_p2v_symmetry.py) |
+| **对称性** | [对称性验证](test/test_v2p_p2v_symmetry.py) |
 | **GPU加速** | [快速参考](QUICK_REFERENCE.md#后端管理) |
 | **内存优化** | [性能优化](QUICK_REFERENCE.md#内存优化) |
 

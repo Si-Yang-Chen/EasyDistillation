@@ -1,6 +1,6 @@
 # 数据类型与形状参考
 
-本文档提供各数据类型的基本形状信息。详细的理论解释和使用方法请参考 [propagator_theory_and_usage.md](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/propagator_theory_and_usage.md)。
+本文档提供各数据类型的基本形状信息。详细的理论解释和使用方法请参考 [propagator_theory_and_usage.md](propagator_theory_and_usage.md)。
 
 ## 常量
 
@@ -35,7 +35,7 @@ from lattice import Ns, Nc, Nd
 
 ### Perambulator / Propagator
 
-参见 [propagator_theory_and_usage.md](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/propagator_theory_and_usage.md) 获取详细理论说明。
+参见 [propagator_theory_and_usage.md](propagator_theory_and_usage.md) 获取详细理论说明。
 
 | 类型 | 物理含义 | 完整形状 | 简化形状 |
 |------|---------|---------|---------|
@@ -91,7 +91,7 @@ cfg_1000.t071.npy       # t_src = 71
 
 ## 详细文档
 
-- **传播子理论与使用**: [propagator_theory_and_usage.md](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/propagator_theory_and_usage.md)
-- **Localized Blending 理论**: [localized_blending/localized_blending_theory.md](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/localized_blending/localized_blending_theory.md)
-- **Localized Blending 实现**: [localized_blending/localized_blending_implementation.md](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/localized_blending/localized_blending_implementation.md)
-- **QuarkDiagram 统一接口**: [unify_vertex_point_color_indices.md](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/unify_vertex_point_color_indices.md)
+- **传播子理论与使用**: [propagator_theory_and_usage.md](propagator_theory_and_usage.md)
+- **Localized Blending 理论**: [localized_blending/localized_blending_theory.md](localized_blending/localized_blending_theory.md)
+- **Localized Blending 实现**: [localized_blending/localized_blending_implementation.md](localized_blending/localized_blending_implementation.md)
+- **QuarkDiagram 统一接口**: [unify_vertex_point_color_indices.md](unify_vertex_point_color_indices.md)

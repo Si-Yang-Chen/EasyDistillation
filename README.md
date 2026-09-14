@@ -25,10 +25,10 @@ See [Quick Reference](QUICK_REFERENCE.md) for a getting-started guide, API cheat
 | [Data Shapes](doc/README.md) | Data type shapes and file naming conventions |
 | [Propagator Theory & Usage](doc/propagator_theory_and_usage.md) | Propagator types, memory estimates, loading examples |
 | [Distillation Workflow](docs/DISTILLATION_WORKFLOW.md) | Traditional distillation step-by-step workflow |
-| [Localized Blending](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/localized_blending/localized_blending.md) | Theory, implementation, and appendix |
+| [Localized Blending](doc/localized_blending/localized_blending.md) | Theory, implementation, and appendix |
 | [FileData Deep Dive](FILEDATA_DETAILED.md) | File I/O architecture and performance analysis |
 | [Document Index](DOCUMENTATION_INDEX.md) | Full documentation index by scenario |
-| [Vector Current Workflow](/public/home/siyangchen/qedinf/experiments/localized-blending/docs/WORKFLOW_ANALYSIS.md) | Localized Blending two-point contraction workflow |
+| [Vector Current Workflow](WORKFLOW_ANALYSIS.md) | Localized Blending two-point contraction workflow |
 
 ## Requirements
 
@@ -44,9 +44,9 @@ See [Quick Reference](QUICK_REFERENCE.md) for a getting-started guide, API cheat
 ## Running Tests
 
 ```bash
-pytest tests/ -v                 # All tests
-pytest tests/ -m "not gpu"       # Skip GPU tests
-pytest tests/test_perambulator.py -v  # Specific test
+pytest test/ -v                 # All tests
+pytest test/ -m "not gpu"       # Skip GPU tests
+pytest test/test_perambulator.py -v  # Specific test
 ```
 
 ## License
