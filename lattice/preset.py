@@ -57,18 +57,23 @@ class OverlapMatrix:
 
 class PropagatorPSV:
     """
-    Point-to-eigenvector propagator (PSV).
+    Point-to-eigenvector propagator (PSV): S_{xa,i} = <eta_x, a | S | xi_i>.
 
-    Full shape: [Lt, Lt, Ns, Ns, Np, Nc, Ne] for single file version
-                [Lt, Ns, Ns, Np, Nc, Ne] for timeslice version
+    Full shape: [Lt(t_src), Lt(t_snk - t_src), Ns_snk, Ns_src, Np, Nc, Ne]
+                for single file version (first axis anchors the source time,
+                second axis is the relative sink time (t_snk - t_src) mod Lt)
+                [Lt(t_snk - t_src), Ns_snk, Ns_src, Np, Nc, Ne] for timeslice version
+                ({cfg}.t{t_src:03d}.npy stores the relative sink-time array)
 
-    PSV[t_snk, t_src, s_snk, s_src, p, c, e] represents:
-        <eigenvector_e(c) | S(x_p, t_snk; source, t_src) | source>
+    PSV[t_src, t_rel, s_snk, s_src, p, c, e] represents:
+        <eta_{x_p}, c | S(t_snk = t_src + t_rel; t_source = t_src) | xi_e>
     where:
         - S is the Dirac propagator
-        - x_p is the point source position
+        - x_p is the point sink position
         - c is the color index
         - e is the eigenvector index
+
+    Left (sink) end is (point, color); right (source) end is eigenvector.
     """
 
     def __init__(self, elem: FileMetaData, Np: int, Ne: int) -> None:
@@ -79,20 +84,25 @@ class PropagatorPSV:
 
 class PropagatorVSP:
     """
-    Eigenvector-to-point propagator (VSP).
+    Eigenvector-to-point propagator (VSP): S_{i,xa} = <xi_i | S | eta_x, a>.
 
-    Full shape: [Lt, Lt, Ns, Ns, Ne, Np, Nc] for single file version
-                [Lt, Ns, Ns, Ne, Np, Nc] for timeslice version
+    Full shape: [Lt(t_src), Lt(t_snk - t_src), Ns_snk, Ns_src, Ne, Np, Nc]
+                for single file version (first axis anchors the source time,
+                second axis is the relative sink time (t_snk - t_src) mod Lt)
+                [Lt(t_snk - t_src), Ns_snk, Ns_src, Ne, Np, Nc] for timeslice version
+                ({cfg}.t{t_src:03d}.npy stores the relative sink-time array)
 
-    VSP[t_snk, t_src, s_snk, s_src, e, p, c] represents:
-        <point_p(c) | S(x_snk, t_snk; eigenvector_e, t_src) | eigenvector_e>
+    VSP[t_src, t_rel, s_snk, s_src, e, p, c] represents:
+        <xi_e | S(t_snk = t_src + t_rel; t_source = t_src) | eta_{x_p}, c>
     where:
         - S is the Dirac propagator
-        - x_snk is the point sink position
+        - x_p is the point sink position
         - c is the color index
         - e is the eigenvector index
 
-    Note: VSP and PSV have the same shape but represent different directions of propagation.
+    Left (sink) end is eigenvector; right (source) end is (point, color).
+    Note: VSP and PSV have the same space-color block sizes but represent
+    different directions of propagation.
     """
 
     def __init__(self, elem: FileMetaData, Np: int, Ne: int) -> None:
@@ -103,18 +113,23 @@ class PropagatorVSP:
 
 class PropagatorPSP:
     """
-    Point-to-point propagator (PSP).
+    Point-to-point propagator (PSP): S_{xa,yb} = <eta_x, a | S | eta_y, b>.
 
-    Full shape: [Lt, Lt, Ns, Ns, Np_snk, Nc_snk, Np_src, Nc_src] for single file version
-                [Lt, Ns, Ns, Np_snk, Nc_snk, Np_src, Nc_src] for timeslice version
+    Full shape: [Lt(t_src), Lt(t_snk - t_src), Ns_snk, Ns_src, Np_snk, Nc_snk, Np_src, Nc_src]
+                for single file version (first axis anchors the source time,
+                second axis is the relative sink time (t_snk - t_src) mod Lt)
+                [Lt(t_snk - t_src), Ns_snk, Ns_src, Np_snk, Nc_snk, Np_src, Nc_src]
+                for timeslice version
 
-    PSP[t_snk, t_src, s_snk, s_src, p_snk, c_snk, p_src, c_src] represents:
-        <point_p_snk(c) | S(x_snk, t_snk; x_src, t_src) | point_p_src>
+    PSP[t_src, t_rel, s_snk, s_src, p_snk, c_snk, p_src, c_src] represents:
+        <eta_{x_p_snk}, c_snk | S(t_snk = t_src + t_rel; t_source = t_src) | eta_{x_p_src}, c_src>
     where:
         - S is the Dirac propagator
         - x_snk, x_src are point sink and source positions
         - c_snk, c_src are color indices
         - p_snk, p_src are point indices
+
+    Left (sink) end is (point_snk, color_snk); right (source) end is (point_src, color_src).
     """
 
     def __init__(self, elem: FileMetaData, Np_snk: int, Np_src: int) -> None:
@@ -221,7 +236,10 @@ class PointSourceNpy(NdarrayFile, PointSource):
         self, prefix: str, suffix: str, shape: List[int] = [128, 72, 3], Np: int = 128
     ) -> None:
         super().__init__()
-        PointSource.__init__(self, FileMetaData(shape, "<c8", 0), Np)
+        # Point coordinates are integers: (Np, Lt, 3) zero-based [x, y, z].
+        # The loader reads the real dtype from the npy header; this metadata
+        # only documents the on-disk layout for consumers.
+        PointSource.__init__(self, FileMetaData(shape, "<i4", 0), Np)
         self.prefix = prefix
         self.suffix = ".npy" if suffix is None else suffix
 
@@ -270,7 +288,7 @@ class PropagatorPSVNpy(NdarrayFile, PropagatorPSV):
             Nc: number of colors (3)
             Ne: number of eigenvectors
     Np : int
-        Number of point sources
+        Number of point sinks (left/sink end of PSV)
     Ne : int
         Number of eigenvectors
     dtype : str
@@ -341,12 +359,12 @@ class PropagatorVSPNpy(NdarrayFile, PropagatorVSP):
     >>> vsp = PropagatorVSPNpy(
     ...     prefix="/path/to/data/cfg_",
     ...     suffix=".vsp.npy",
-    ...     shape=[72, 72, 4, 4, 216, 3, 70],
+    ...     shape=[72, 72, 4, 4, 70, 216, 3],
     ...     Np=216,
     ...     Ne=70
     ... )
     >>> data = vsp.load("1000")
-    >>> print(data.shape)  # (72, 72, 4, 4, 216, 3, 70)
+    >>> print(data.shape)  # (72, 72, 4, 4, 70, 216, 3)
     """
 
     def __init__(
@@ -576,11 +594,11 @@ class PropagatorPSVTimeslicesNpy(NdarrayTimeslicesFile, PropagatorPSV):
         where:
             Lt: temporal extent
             Ns: Dirac spin dimension (4)
-            Np: number of point sources
+            Np: number of point sinks
             Nc: number of colors (3)
             Ne: number of eigenvectors
     Np : int
-        Number of point sources
+        Number of point sinks (left/sink end of PSV)
     Ne : int
         Number of eigenvectors
     dtype : str
@@ -589,7 +607,7 @@ class PropagatorPSVTimeslicesNpy(NdarrayTimeslicesFile, PropagatorPSV):
     Notes:
     ------
     Each timeslice file has shape [Lt, Ns, Ns, Np, Nc, Ne], representing:
-        PSV[t_snk, s_snk, s_src, p, c, e] for fixed t_src
+        PSV[t_rel = (t_snk - t_src) mod Lt, s_snk, s_src, p, c, e] for fixed t_src
 
     When all files are loaded, they are assembled into shape [Lt, Lt, Ns, Ns, Np, Nc, Ne]
     where the first Lt is t_src (source time) and second Lt is t_snk (sink time).
@@ -697,6 +715,13 @@ class GaugeFieldBinary(BinaryFile, GaugeField):
 
 
 class ElementalNpy(NdarrayFile, Elemental):
+    """
+    Legacy meson elemental loader: O_{i,j} on disk as (num_disp, num_mom, Lt, Ne, Ne).
+
+    Physically identical to current-elemental V2V. Prefer CurrentElementalV2V
+    ({cfg}_v2v.npy from 03.current_elemental_all.*) to avoid duplicate storage/I/O.
+    """
+
     def __init__(
         self,
         prefix: str,
@@ -711,6 +736,55 @@ class ElementalNpy(NdarrayFile, Elemental):
 
     def load(self, key: str):
         return super().get_file_data(f"{self.prefix}{key}{self.suffix}", self.elem)
+
+
+class CurrentElementalV2V(NdarrayFile, Elemental):
+    """
+    Current-elemental V2V loader: O_{i,j} = <xi_i|O|xi_j>.
+
+    This is the meson elemental (V2V). Meson and Current both use this object for
+    low-low matrix elements; do not also load a separate ElementalNpy for the same cfg.
+
+    Disk layout (from 3.gen_current_elemental_all.py):
+        (Lt, num_disp, num_mom, Ne, Ne) in {key}_v2v.npy
+    Presented layout (Meson / Current convention):
+        (num_disp, num_mom, Lt, Ne, Ne)
+    """
+
+    class _View:
+        """Remap disk (Lt,disp,mom,Ne,Ne) indexing to (disp,mom,Lt,Ne,Ne)."""
+
+        def __init__(self, raw, disk_shape):
+            self._raw = raw
+            Lt, num_disp, num_mom, Ne, Ne2 = disk_shape
+            self.shape = (num_disp, num_mom, Lt, Ne, Ne2)
+
+        def __getitem__(self, key):
+            # Expect (disp, mom, t, e_snk, e_src) as used by Meson/Current
+            if not isinstance(key, tuple) or len(key) < 5:
+                raise IndexError(
+                    f"CurrentElementalV2V view expects 5-index key, got {key!r}"
+                )
+            disp, mom, t, e1, e2 = key[0], key[1], key[2], key[3], key[4]
+            return self._raw[(t, disp, mom, e1, e2)]
+
+    def __init__(
+        self,
+        prefix: str,
+        suffix: str,
+        shape: List[int],  # disk shape [Lt, num_disp, num_mom, Ne, Ne]
+        Ne: int,
+    ) -> None:
+        super().__init__()
+        # FileMetaData stores disk shape for mmap helpers; view exposes Meson layout
+        Elemental.__init__(self, FileMetaData(shape, "<c16", 0), Ne)
+        self.prefix = prefix
+        self.suffix = "_v2v.npy" if suffix is None else suffix
+        self._disk_shape = list(shape)
+
+    def load(self, key: str):
+        raw = super().get_file_data(f"{self.prefix}{key}{self.suffix}", self.elem)
+        return CurrentElementalV2V._View(raw, self._disk_shape)
 
 
 class Jpsi2gammaNpy(NdarrayFile, TwoPoint):

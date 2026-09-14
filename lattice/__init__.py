@@ -15,6 +15,7 @@ from .preset import (
     PointSourceNpy,
     OverlapMatrix,
     OverlapMatrixNpy,
+    CurrentElementalV2V,
     CurrentElementalV2P,
     CurrentElementalP2V,
     CurrentElementalP2P,
@@ -44,11 +45,14 @@ from .quark_diagram import (
     Current,
     Propagator,
     PropagatorLocal,
+    PropagatorWithCurrent,
     Diagram,
     compute_diagrams,
     compute_diagrams_multitime,
     quark_contract,
 )
 from .constant import Nc, Ns, Nd
+from .point_propagator_io import PointPropagatorSlabFile, PointPropagatorSlabReader
+from .temporal_slab_io import TemporalSlabFile, TemporalSlabReader
 
 
