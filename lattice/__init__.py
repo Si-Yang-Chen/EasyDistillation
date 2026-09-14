@@ -52,8 +52,6 @@ from .quark_diagram import (
     quark_contract,
 )
 from .constant import Nc, Ns, Nd
-from .point_propagator_io import PointPropagatorSlabFile, PointPropagatorSlabReader
-from .temporal_slab_io import TemporalSlabFile, TemporalSlabReader
 from .current_elemental import (
     CURRENT_V2V_ARTIFACT_SCHEMA,
     CURRENT_V2V_CONTRACTION_SCHEMA,
