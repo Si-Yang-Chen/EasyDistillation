@@ -91,6 +91,16 @@ class DensityPerambulatorGenerator:  # TODO: Add parameters to do smearing befor
 
         data_lexico = np.zeros((2, Ne, Lz, Ly, Lx, Nc), "<c16")
         data_cb2 = np.zeros((2, Ne, 2, Lz, Ly, Lx // 2, Nc), "<c16")
+        # ti/tf are global source times, but the LatticeFermion buffers below live
+        # on this rank's sublattice. Convert to local time and skip ranks that do
+        # not own the slice, instead of indexing the local time axis with a global
+        # value. On a single rank (gt == 0) this is exactly the identity.
+        gt = self.latt_info.grid_coord[3]
+        Lt_local = self.latt_info.size[3]
+        owns_ti = gt * Lt_local <= ti < (gt + 1) * Lt_local
+        owns_tf = gt * Lt_local <= tf < (gt + 1) * Lt_local
+        ti_local = ti - gt * Lt_local
+        tf_local = tf - gt * Lt_local
         set_backend("numpy")
         for e in range(Ne):
             if ti != self._t:
@@ -131,7 +141,10 @@ class DensityPerambulatorGenerator:  # TODO: Add parameters to do smearing befor
         for eigen in range(Ne):
             if ti != self._t:
                 for spin in range(Ns):
-                    V[:, ti, :, :, :, spin, :] = data_cb2[0, eigen, :, :, :, :, :]
+                    # Only the rank owning the global time slice writes the source;
+                    # the solve below is global, so every rank must run it.
+                    if owns_ti:
+                        V[:, ti_local, :, :, :, spin, :] = data_cb2[0, eigen, :, :, :, :, :]
                     SV_i[eigen, :, :, :, :, :, spin, :] = dirac.invert(_V).data.reshape(
                         2, Lt, Lz, Ly, Lx // 2, Ns, Nc
                     )[:, tau, :, :, :, :, :]
@@ -139,12 +152,19 @@ class DensityPerambulatorGenerator:  # TODO: Add parameters to do smearing befor
 
             if tf != self._tf:
                 for spin in range(Ns):
-                    V[:, tf, :, :, :, spin, :] = data_cb2[1, eigen, :, :, :, :, :]
+                    if owns_tf:
+                        V[:, tf_local, :, :, :, spin, :] = data_cb2[1, eigen, :, :, :, :, :]
                     SV_f[eigen, :, :, :, :, :, spin, :] = dirac.invert(_V).data.reshape(
                         2, Lt, Lz, Ly, Lx // 2, Ns, Nc
                     )[:, tau, :, :, :, :, :]
                     V[:] = 0
-            SV_f[:] = contract("ii,kezyxjic,jj->kezyxijc", gamma(15), SV_f.conj(), gamma(15))
+                # gamma5-conjugate only the row that was just inverted. T(S) =
+                # gamma5 S^dag gamma5 is an involution, so applying it once per
+                # eigen row is required; applying it to the whole buffer on every
+                # iteration would undo itself for half of the rows.
+                SV_f[eigen] = contract(
+                    "ii,ezyxjic,jj->ezyxijc", gamma(15), SV_f[eigen].conj(), gamma(15)
+                )
 
         if ti != self._t:
             self._t = ti

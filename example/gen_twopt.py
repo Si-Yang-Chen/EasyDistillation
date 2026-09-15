@@ -71,7 +71,7 @@ print(
 )
 ###############################################################################
 
-# compute summation of p2 = 1 2pt
+# compute summation of p2 = 2 2pt
 from lattice.correlator.dispersion_relation import twopoint_mom2
 
 twopt_mom2 = twopoint_mom2(pi_A1[0], 2, e, p, list(range(128)), 128)

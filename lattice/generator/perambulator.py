@@ -146,11 +146,27 @@ class PerambulatorGenerator:
             if eigenvector_snk is None:
                 usedNe_snk = 0
             else:
-                usedNe_snk = eigenvector_snk.Ne
+                # same_eigenvector aliases the sink to the source handle, whose
+                # .Ne is the on-disk maximum. When the source is truncated, the
+                # sink must follow the truncation too, otherwise VSV is
+                # allocated with more sink modes than the loaded data provides.
+                usedNe_snk = usedNe_src if self.same_eigenvector else eigenvector_snk.Ne
         self.eigenvector_src = eigenvector_src
         self.eigenvector_snk = eigenvector_snk
         self.Ne_src = usedNe_src
         self.Ne_snk = usedNe_snk
+        if (
+            self.same_eigenvector
+            and eigenvector_src is not None
+            and self.Ne_snk > self.Ne_src
+        ):
+            # With same_eigenvector the sink *is* the source basis, so a larger
+            # sink truncation can never be satisfied by the loaded data.
+            raise ValueError(
+                f"usedNe_snk={self.Ne_snk} exceeds usedNe_src={self.Ne_src}, but "
+                "same_eigenvector=True shares a single basis; the sink cannot use "
+                "more eigenvectors than the source."
+            )
 
         if usedNp_src is None:
             if point_src is None:
@@ -262,7 +278,14 @@ class PerambulatorGenerator:
             eigenvector_src_data_dagger = None
 
         if self.same_eigenvector:
-            eigenvector_snk_data_dagger = eigenvector_src_data_dagger
+            # The source buffer is truncated to Ne_src; the sink view must not
+            # index past it when usedNe_snk was set larger than usedNe_src.
+            # A None source (point-source-only runs) stays None.
+            eigenvector_snk_data_dagger = (
+                None
+                if eigenvector_src_data_dagger is None
+                else eigenvector_src_data_dagger[:Ne_snk]
+            )
         elif self.eigenvector_snk is not None:
             for e in range(Ne_snk):
                 for t in range(Lt):
@@ -297,7 +320,14 @@ class PerambulatorGenerator:
         else:
             self._eigenvector_data_dagger = None
         if self.same_eigenvector:
-            self._eigenvector_snk_data_dagger = self._eigenvector_data_dagger
+            # Same truncation rule as above: never expose more sink rows than
+            # the source dagger buffer (built with Ne_src rows) actually holds.
+            # A None source (point-source-only runs) stays None.
+            self._eigenvector_snk_data_dagger = (
+                None
+                if self._eigenvector_data_dagger is None
+                else self._eigenvector_data_dagger[: self.Ne_snk]
+            )
         elif self.eigenvector_snk is not None:
             self._eigenvector_snk_data_dagger = backend.asarray(
                 core.cb2(eigenvector_snk_data_dagger, [1, 2, 3, 4])
@@ -312,7 +342,7 @@ class PerambulatorGenerator:
                 "Gauge not loaded, please use .load() before .stout_smear()."
             )
 
-        gauge.smearSTOUT(nstep, rho, dir_ignore)
+        gauge.stoutSmear(nstep, rho, dir_ignore)
         self.gauge_field_smear = gauge
 
     def stout_smear(self, nstep: int, rho: float, dir_ignore: int = 3):

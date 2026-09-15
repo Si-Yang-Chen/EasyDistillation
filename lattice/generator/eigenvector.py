@@ -240,7 +240,7 @@ class EigenvectorGenerator:
         gauge = io.readQIOGauge(self._gauge_field_path)
         Lx, Ly, Lz, Lt = gauge.latt_info.size
 
-        gauge.smearSTOUT(nstep, rho, dir_ignore=3)
+        gauge.stoutSmear(nstep, rho, dir_ignore=3)
 
         self.gauge_quda = gauge
         backend = get_backend()

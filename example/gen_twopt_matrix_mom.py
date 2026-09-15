@@ -68,5 +68,6 @@ for cfg in dispatch:
     backend = get_backend()
 
     # compute 2pt
-    twopt = twopoint_matrix_multi_mom([ins1_hc[2], ins1_jpsi[2]], momlist, e, p, list(range(128)), 128)  # [Nop, Lt]
+    # return shape: [Nmom * Nop * Nop, Nt, Lt]
+    twopt = twopoint_matrix_multi_mom([ins1_hc[2], ins1_jpsi[2]], momlist, e, p, list(range(128)), 128)
     backend.save(save_path, twopt)

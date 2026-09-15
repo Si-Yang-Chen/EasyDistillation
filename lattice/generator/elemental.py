@@ -353,7 +353,7 @@ class ElementalGenerator:
         from pyquda_utils import io
 
         gauge = io.readQIOGauge(self._gauge_field_path)
-        gauge.smearSTOUT(nstep, rho, dir_ignore=3)
+        gauge.stoutSmear(nstep, rho, dir_ignore=3)
 
         self._U = backend.asarray(gauge.lexico()[: Nd - 1])
 
@@ -1267,7 +1267,7 @@ class CurrentElementalGenerator:
         from pyquda_utils import io
 
         gauge = io.readQIOGauge(self._gauge_field_path)
-        gauge.smearSTOUT(nstep, rho, dir_ignore=3)
+        gauge.stoutSmear(nstep, rho, dir_ignore=3)
 
         self._U = backend.asarray(gauge.lexico()[: Nd - 1])
 

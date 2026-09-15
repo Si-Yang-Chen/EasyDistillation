@@ -110,7 +110,7 @@ Ds_snk = Meson(elemental, op_Ds, False)
 
 # cfg = "s1.0_cfg_2000.stout.n20.f0.12.nev70"
 dispatcher = Dispatch("cfglist.700.txt", "balabala")
-for cfg in ["s1.0_cfg_2000.stout.n20.f0.12.nev70"]:
+for cfg in dispatcher:
     line_light.load(cfg)
     line_charm.load(cfg)
     line_local_light.load(cfg)

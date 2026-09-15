@@ -23,7 +23,7 @@ from lattice import Meson, Propagator, PropagatorLocal, QuarkDiagram, compute_di
 from time import perf_counter
 from lattice.correlator.two_particles import get_AB_opratorlist_row, get_mom2_list
 
-mom_max = 4  # compute mom2 = 0, 1, 2, 3
+mom_max = 4  # shells mom2 = 0, 1, 2, 3; the loop below only uses mom2 = 1
 
 Nt = 128
 backend = get_backend()

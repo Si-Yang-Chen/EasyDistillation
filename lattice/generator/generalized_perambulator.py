@@ -92,6 +92,16 @@ class GeneralizedPerambulatorGenerator:  # TODO: Add parameters to do smearing b
 
         data_lexico = np.zeros((2, Ne, Lz, Ly, Lx, Nc), "<c16")
         data_cb2 = np.zeros((2, Ne, 2, Lz, Ly, Lx // 2, Nc), "<c16")
+        # ti/tf are global source times, but the LatticeFermion buffers below live
+        # on this rank's sublattice. Convert to local time and let non-owning ranks
+        # keep a zero source, instead of indexing the local time axis with a global
+        # value. On a single rank (gt == 0) this is exactly the identity.
+        gt = self.latt_info.grid_coord[3]
+        Lt_local = self.latt_info.size[3]
+        owns_ti = gt * Lt_local <= ti < (gt + 1) * Lt_local
+        owns_tf = gt * Lt_local <= tf < (gt + 1) * Lt_local
+        ti_local = ti - gt * Lt_local
+        tf_local = tf - gt * Lt_local
         set_backend("numpy")
         for e in range(Ne):
             if ti != self._ti:
@@ -141,7 +151,10 @@ class GeneralizedPerambulatorGenerator:  # TODO: Add parameters to do smearing b
             if ti != self._ti:
                 stream_i.synchronize()
                 for spin in range(Ns):
-                    V[:, ti, :, :, :, spin, :] = data_cb2[0, eigen, :, :, :, :, :]
+                    # Only the rank owning the global time slice writes the source;
+                    # the solve below is global, so every rank must run it.
+                    if owns_ti:
+                        V[:, ti_local, :, :, :, spin, :] = data_cb2[0, eigen, :, :, :, :, :]
                     SV_i[:, :, :, :, :, :, spin, :] = dirac.invert(_V).data.reshape(2, Lt, Lz, Ly, Lx // 2, Ns, Nc)
                     V[:] = 0
                 SV_i.get(stream_i, out=h_SV_i[eigen])
@@ -149,7 +162,8 @@ class GeneralizedPerambulatorGenerator:  # TODO: Add parameters to do smearing b
             if tf != self._tf:
                 stream_f.synchronize()
                 for spin in range(Ns):
-                    V[:, tf, :, :, :, spin, :] = data_cb2[1, eigen, :, :, :, :, :]
+                    if owns_tf:
+                        V[:, tf_local, :, :, :, spin, :] = data_cb2[1, eigen, :, :, :, :, :]
                     SV_f[:, :, :, :, :, :, spin, :] = dirac.invert(_V).data.reshape(2, Lt, Lz, Ly, Lx // 2, Ns, Nc)
                     V[:] = 0
                 SV_f[:] = contract("ii,etzyxjic,jj->etzyxijc", gamma(15), SV_f.conj(), gamma(15))

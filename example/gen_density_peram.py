@@ -43,8 +43,8 @@ perambulator = DensityPerambulatorGenerator(
 )
 perambulator.dirac.invert_param.verbosity = enum_quda.QudaVerbosity.QUDA_SUMMARIZE
 
-out_prefix = "tests/"
-out_suffix = ".perambulators.npy"
+out_prefix = "test/"
+out_suffix = ".perambulator.npy"
 
 data = backend.zeros((Lt, Ne, Lz * Ly * Lx, Nc), "<c16")
 for cfg in ["s1.0_cfg_2000"]:
