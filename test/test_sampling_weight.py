@@ -7,7 +7,7 @@ This module tests the core components of the Localized Blending method:
 - enumerate_point_scenes(): Enumerate point coincidence scenes
 - High-mode projection formulas (VSP, PSV, PSP)
 
-Reference: doc/localized_blending/localized_blending_theory.md
+Reference: archive/docs/localized_blending/localized_blending_theory.md
 """
 
 import unittest
