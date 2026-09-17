@@ -452,6 +452,20 @@ class CurrentTerm:
         object.__setattr__(self, "link_dagger", bool(self.link_dagger))
         object.__setattr__(self, "temporal_point_split", bool(self.temporal_point_split))
 
+    def term_time_offsets(self):
+        """Return ``(left_delta, right_delta)`` for this term.
+
+        This is the vertex protocol's per-term leg placement (02 SS2): the left
+        (sink-facing) leg sits at ``anchor + bar_offset[3]`` and the right
+        (source-facing) leg at ``anchor + field_offset[3]``.  A plain meson has no
+        such method, which is exactly how the graph decides whether a vertex is
+        handled term by term -- the predicate is whether this method exists.
+
+        The deltas are unwrapped integers, so a backward boundary term reports -1
+        and the propagator's own modular time handling performs the wrap.
+        """
+        return int(self.bar_offset[3]), int(self.field_offset[3])
+
     def as_dict(self):
         return {
             "schema": CURRENT_TERM_SCHEMA,

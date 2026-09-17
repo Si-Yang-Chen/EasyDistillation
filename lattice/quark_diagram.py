@@ -1663,6 +1663,104 @@ class SceneExpandedDiagram(QuarkDiagram):
 
 
 
+def _first_term(term_indices):
+    """The representative term index of an offset class, or ``None``."""
+    if not term_indices:
+        return None
+    return term_indices[0]
+
+
+def _vertex_terms_for(vertex_terms, vertex_index):
+    """The offset class chosen for one vertex, or ``None`` when there is no axis."""
+    if vertex_terms is None:
+        return None
+    return vertex_terms[vertex_index]
+
+
+def _shift_time(time, delta):
+    """Shift an anchor time by a leg offset, leaving arrays alone if delta is 0.
+
+    A zero delta must not copy the (possibly large) time array: that would be
+    preparing a duplicate for a translation, which F3.3 forbids.
+    """
+    if delta == 0:
+        return time
+    if isinstance(time, (int, np.integer)):
+        return int(time) + int(delta)
+    return np.asarray(time) + int(delta)
+
+
+def _supports_vertex_terms(vertex):
+    """Whether a vertex can describe where each of its legs sits in time.
+
+    This is the single predicate the graph uses to decide term-wise handling
+    (02 SS2): a plain meson does not implement it and keeps calling ``get(t)``
+    exactly as before, while a current whose terms can split the legs does.
+    """
+    return callable(getattr(vertex, "term_time_offsets", None))
+
+
+def vertex_leg_offsets(vertex, anchor_time, term_index=None):
+    """Return ``(left_delta, right_delta)`` for one vertex's two legs.
+
+    A plain meson keeps both legs on its own slice, so this is ``(0, 0)``.  A
+    current's left leg faces the sink and its right leg faces the source, so bar is
+    the left delta and field the right one (02 SS2).
+
+    ``term_index=None`` means "no term choice was made", which is only legal for a
+    vertex whose terms do not split its legs; an equal-time current is contracted as
+    a whole and must not be enumerated term by term.
+    """
+    probe = getattr(vertex, "term_time_offsets", None)
+    if not callable(probe):
+        return 0, 0
+    if term_index is None:
+        split = getattr(vertex, "is_point_split", None)
+        if callable(split) and split():
+            raise ValueError(
+                "a vertex whose terms split its legs in time needs an explicit "
+                "term choice; none was made"
+            )
+        return 0, 0
+    left, right = probe(term_index)
+    return int(left), int(right)
+
+
+def offset_classes(vertex):
+    """The distinct ``(left_delta, right_delta)`` pairs a vertex's terms realise.
+
+    Terms sharing an offset pair must be contracted as one block rather than
+    enumerated separately: the enumeration cost is the number of offset *classes*
+    (2 for the temporal conserved current), not the number of terms, and that is why
+    ten point-split currents are still only 1024 contractions (01 SSF5, F2.3).
+
+    Returns ``[(offsets, [term indices])]`` in first-appearance order, or
+    ``[((0, 0), [None])]`` for a vertex that does not split its legs.
+    """
+    if not _supports_vertex_terms(vertex):
+        return [((0, 0), [None])]
+
+    count = getattr(vertex, "term_count", None)
+    if count is None:
+        terms = getattr(vertex, "terms", None)
+        if terms is None:
+            raise TypeError(
+                f"vertex of type {type(vertex).__name__} implements "
+                "term_time_offsets but exposes neither term_count nor terms"
+            )
+        count = len(terms)
+
+    classes = []
+    index_of = {}
+    for term_index in range(int(count)):
+        offsets = vertex_leg_offsets(vertex, None, term_index)
+        if offsets not in index_of:
+            index_of[offsets] = len(classes)
+            classes.append((offsets, []))
+        classes[index_of[offsets]][1].append(term_index)
+    return classes
+
+
 def compute_diagrams_multitime(
     diagrams: List[QuarkDiagram],
     time_list,
@@ -1740,233 +1838,312 @@ def compute_diagrams_multitime(
             else:
                 if id(multi_time) != id(time):
                     raise NotImplementedError("only support one multitime yet")
+
+    # Offset classes (02 SS3).  A vertex whose terms split its legs in time
+    # contributes one axis per distinct ``(left_delta, right_delta)`` pair; terms
+    # sharing a pair are contracted as one block, so the cost is the number of
+    # classes rather than the number of terms (01 SSF5, F2.3).  A plain meson or an
+    # equal-time current yields no axis and keeps the single-contraction path.
+    axes = []
+    for vertex_index, vertex in enumerate(vertex_list):
+        if not _supports_vertex_terms(vertex):
+            continue
+        classes = offset_classes(vertex)
+        if len(classes) == 1:
+            # Every term sits on one slice: no axis, and the vertex block already
+            # sums its terms, so this must stay byte-identical to today's path.
+            continue
+        anchor = time_list[vertex_index]
+        if not isinstance(anchor, (int, np.integer)):
+            # A multitime vertex has no single anchor, so its legs have no single
+            # offset: "each element of the scan gets its own offsets" contradicts
+            # per-term offsets (N2).  This is a semantic conflict, so say so rather
+            # than let it surface as an einsum rank error.
+            raise ValueError(
+                f"vertex {vertex_index} is both a multitime vertex and a point-split "
+                "vertex: a scanned time has no single anchor for the per-term leg "
+                "offsets to be measured from.  Scan a different vertex, or fix this "
+                "one's time (N2, F8.2)."
+            )
+        axes.append((vertex_index, classes))
+
+    if axes:
+        from itertools import product as _iter_product
+
+        combinations = []
+        for choice in _iter_product(*[range(len(classes)) for _, classes in axes]):
+            terms = [None] * len(vertex_list)
+            for (vertex_index, classes), class_index in zip(axes, choice):
+                terms[vertex_index] = classes[class_index][1]
+            combinations.append(tuple(terms))
+    else:
+        combinations = [tuple([None] * len(vertex_list))]
+
     for diagram_idx, (diagram, scene_coefficient) in enumerate(diagrams_to_compute):
         if debug:
             logger.debug(f"\n{'='*80}")
             logger.debug(f"Processing scene contraction {diagram_idx}")
             logger.debug(f"  coefficient: {scene_coefficient}")
+            logger.debug(f"  offset-class combinations: {len(combinations)}")
             logger.debug(f"{'='*80}")
-        diagram_value.append(1.0)
-        for contraction_idx, (operands, subscripts) in enumerate(
-            zip(diagram.operands, diagram.subscripts)
-        ):
-            if debug:
-                logger.debug(f"\n  Contraction {contraction_idx}:")
-                logger.debug(f"  Original subscripts: {subscripts}")
+        # Each offset-class combination is one term block of the splitting vertices.
+        # A contraction is linear in a vertex block, so the classes are **summed**;
+        # multiplying them would be wrong as soon as a vertex has two classes.  A
+        # vertex that never splits its legs yields exactly one combination, so a
+        # meson and an equal-time current stay a single contraction with unchanged
+        # arithmetic (F2.3, F7.1).
+        scene_total = 0
+        for vertex_terms in combinations:
+            combination_value = 1.0
+            for contraction_idx, (operands, subscripts) in enumerate(
+                zip(diagram.operands, diagram.subscripts)
+            ):
+                if debug:
+                    logger.debug(f"\n  Contraction {contraction_idx}:")
+                    logger.debug(f"  Original subscripts: {subscripts}")
 
-            have_multitime = False
-            subscripts = subscripts.split(",")
-            idx = 0
-            operands_data = []
-
-            if debug:
-                logger.debug(f"  Propagators (operands[0]):")
-            for prop_idx, item in enumerate(operands[0]):
-                propagator = propagator_list[item[0]]
-
-                # Determine propagator type from diagram
-                if hasattr(diagram, "propagator_types") and diagram.propagator_types:
-                    prop_type = diagram.propagator_types[contraction_idx][prop_idx]
-                    if debug:
-                        logger.debug(f"    [{prop_idx}] Propagator type: {prop_type}")
-                else:
-                    prop_type = "VSV"  # Default for backward compatibility
-                    if debug:
-                        logger.debug(
-                            f"    [{prop_idx}] No propagator type info, defaulting to VSV"
-                        )
-
-                # Extract vertex attributes (item[1]=source/right, item[2]=sink/left)
-                src_vertex = vertex_list[item[1]]
-                snk_vertex = vertex_list[item[2]]
-
-                usedNe_source = getattr(src_vertex, "usedNe", None)
-                usedNe_sink = getattr(snk_vertex, "usedNe", None)
-                usedNp_source = getattr(src_vertex, "usedNp", None)
-                usedNp_sink = getattr(snk_vertex, "usedNp", None)
+                have_multitime = False
+                subscripts = subscripts.split(",")
+                idx = 0
+                operands_data = []
 
                 if debug:
-                    logger.debug(
-                        f"      Vertex attributes: source usedNe={usedNe_source}, usedNp={usedNp_source}; sink usedNe={usedNe_sink}, usedNp={usedNp_sink}"
-                    )
+                    logger.debug(f"  Propagators (operands[0]):")
+                for prop_idx, item in enumerate(operands[0]):
+                    propagator = propagator_list[item[0]]
 
-                # Get propagator data based on type
-                try:
-                    if prop_type == "VSV":
-                        # Standard VSV: use get(t_source, t_sink) -> S_{i,j}
-                        prop_data = propagator.get(
-                            time_list[item[1]], time_list[item[2]]
-                        )
-                        # Slice both ends' usedNe
-                        if usedNe_sink is not None:
-                            prop_data = prop_data[..., :usedNe_sink, :]
-                        if usedNe_source is not None:
-                            prop_data = prop_data[..., :usedNe_source]
+                    # Determine propagator type from diagram
+                    if hasattr(diagram, "propagator_types") and diagram.propagator_types:
+                        prop_type = diagram.propagator_types[contraction_idx][prop_idx]
                         if debug:
-                            logger.debug(
-                                f"      Called propagator.get(t_source={time_list[item[1]]}, t_sink={time_list[item[2]]})"
-                            )
-                    elif prop_type == "VSP":
-                        # VSP: sink=vector, source=point
-                        # get_VSP_highmode handles usedNe_source=0 internally
-                        prop_data = propagator.get_VSP_highmode(
-                            time_list[item[1]],
-                            time_list[item[2]],
-                            usedNe_source=usedNe_source,
-                            usedNe_sink=usedNe_sink,
-                        )
-                        if debug:
-                            logger.debug(
-                                f"      Called propagator.get_VSP_highmode with usedNe_source={usedNe_source}"
-                            )
-                        # Slice sink端 (vector) usedNe
-                        if usedNe_sink is not None:
-                            prop_data = prop_data[..., :usedNe_sink, :, :]
-                        # Slice source端 (point) usedNp
-                        if usedNp_source is not None:
-                            prop_data = prop_data[..., :usedNp_source, :]
-                    elif prop_type == "PSV":
-                        # PSV: sink=point, source=vector
-                        # get_PSV_highmode handles usedNe_sink=0 internally
-                        prop_data = propagator.get_PSV_highmode(
-                            time_list[item[1]],
-                            time_list[item[2]],
-                            usedNe_sink=usedNe_sink,
-                            usedNe_source=usedNe_source,
-                        )
-                        if debug:
-                            logger.debug(
-                                f"      Called propagator.get_PSV_highmode with usedNe_sink={usedNe_sink}"
-                            )
-                        # Slice sink端 (point) usedNp
-                        if usedNp_sink is not None:
-                            prop_data = prop_data[..., :usedNp_sink, :, :]
-                        # Slice source端 (vector) usedNe
-                        if usedNe_source is not None:
-                            prop_data = prop_data[..., :usedNe_source]
-                    elif prop_type == "PSP":
-                        # PSP: sink=point, source=point
-                        # get_PSP_highmode handles both usedNe=0 cases internally
-                        prop_data = propagator.get_PSP_highmode(
-                            time_list[item[1]],
-                            time_list[item[2]],
-                            usedNe_sink,
-                            usedNe_source,
-                        )
-                        if debug:
-                            logger.debug(
-                                f"      Called propagator.get_PSP_highmode with usedNe_sink={usedNe_sink}, usedNe_source={usedNe_source}"
-                            )
-                        # Slice sink端 (point) usedNp
-                        if usedNp_sink is not None:
-                            prop_data = prop_data[..., :usedNp_sink, :, :, :]
-                        # Slice source端 (point) usedNp
-                        if usedNp_source is not None:
-                            prop_data = prop_data[..., :usedNp_source, :]
+                            logger.debug(f"    [{prop_idx}] Propagator type: {prop_type}")
                     else:
-                        raise ValueError(f"Unknown propagator type: {prop_type}")
+                        prop_type = "VSV"  # Default for backward compatibility
+                        if debug:
+                            logger.debug(
+                                f"    [{prop_idx}] No propagator type info, defaulting to VSV"
+                            )
 
-                    operands_data.append(prop_data)
+                    # Extract vertex attributes (item[1]=source/right, item[2]=sink/left)
+                    src_vertex = vertex_list[item[1]]
+                    snk_vertex = vertex_list[item[2]]
+
+                    usedNe_source = getattr(src_vertex, "usedNe", None)
+                    usedNe_sink = getattr(snk_vertex, "usedNe", None)
+                    usedNp_source = getattr(src_vertex, "usedNp", None)
+                    usedNp_sink = getattr(snk_vertex, "usedNp", None)
+
                     if debug:
                         logger.debug(
-                            f"        shape: {prop_data.shape}, dtype: {prop_data.dtype}"
+                            f"      Vertex attributes: source usedNe={usedNe_source}, usedNp={usedNp_source}; sink usedNe={usedNe_sink}, usedNp={usedNp_sink}"
                         )
 
-                    # Handle multitime subscripts
-                    if not isinstance(time_list[item[1]], int) or not isinstance(
-                        time_list[item[2]], int
+                    # Each end's time is its vertex's anchor shifted by that leg's
+                    # offset (02 SS2).  The propagator's source end sits on the src
+                    # vertex's right (source-facing) leg and its sink end on the snk
+                    # vertex's left (sink-facing) leg, so each vertex contributes its own
+                    # delta.  A plain meson reports (0, 0) and nothing moves.
+                    source_term = _vertex_terms_for(vertex_terms, item[1])
+                    sink_term = _vertex_terms_for(vertex_terms, item[2])
+                    src_left, src_right = vertex_leg_offsets(
+                        src_vertex, time_list[item[1]], _first_term(source_term)
+                    )
+                    snk_left, snk_right = vertex_leg_offsets(
+                        snk_vertex, time_list[item[2]], _first_term(sink_term)
+                    )
+                    source_time = _shift_time(time_list[item[1]], src_right)
+                    sink_time = _shift_time(time_list[item[2]], snk_left)
+
+                    if debug and (
+                        source_time is not time_list[item[1]]
+                        or sink_time is not time_list[item[2]]
                     ):
+                        logger.debug(
+                            f"      Shifted leg times: source {time_list[item[1]]} -> "
+                            f"{source_time}, sink {time_list[item[2]]} -> {sink_time}"
+                        )
+
+                    # Get propagator data based on type
+                    try:
+                        if prop_type == "VSV":
+                            # Standard VSV: use get(t_source, t_sink) -> S_{i,j}
+                            prop_data = propagator.get(source_time, sink_time)
+                            # Slice both ends' usedNe
+                            if usedNe_sink is not None:
+                                prop_data = prop_data[..., :usedNe_sink, :]
+                            if usedNe_source is not None:
+                                prop_data = prop_data[..., :usedNe_source]
+                            if debug:
+                                logger.debug(
+                                    f"      Called propagator.get(t_source={source_time}, t_sink={sink_time})"
+                                )
+                        elif prop_type == "VSP":
+                            # VSP: sink=vector, source=point
+                            # get_VSP_highmode handles usedNe_source=0 internally
+                            prop_data = propagator.get_VSP_highmode(
+                                source_time,
+                                sink_time,
+                                usedNe_source=usedNe_source,
+                                usedNe_sink=usedNe_sink,
+                            )
+                            if debug:
+                                logger.debug(
+                                    f"      Called propagator.get_VSP_highmode with usedNe_source={usedNe_source}"
+                                )
+                            # Slice sink端 (vector) usedNe
+                            if usedNe_sink is not None:
+                                prop_data = prop_data[..., :usedNe_sink, :, :]
+                            # Slice source端 (point) usedNp
+                            if usedNp_source is not None:
+                                prop_data = prop_data[..., :usedNp_source, :]
+                        elif prop_type == "PSV":
+                            # PSV: sink=point, source=vector
+                            # get_PSV_highmode handles usedNe_sink=0 internally
+                            prop_data = propagator.get_PSV_highmode(
+                                source_time,
+                                sink_time,
+                                usedNe_sink=usedNe_sink,
+                                usedNe_source=usedNe_source,
+                            )
+                            if debug:
+                                logger.debug(
+                                    f"      Called propagator.get_PSV_highmode with usedNe_sink={usedNe_sink}"
+                                )
+                            # Slice sink端 (point) usedNp
+                            if usedNp_sink is not None:
+                                prop_data = prop_data[..., :usedNp_sink, :, :]
+                            # Slice source端 (vector) usedNe
+                            if usedNe_source is not None:
+                                prop_data = prop_data[..., :usedNe_source]
+                        elif prop_type == "PSP":
+                            # PSP: sink=point, source=point
+                            # get_PSP_highmode handles both usedNe=0 cases internally
+                            prop_data = propagator.get_PSP_highmode(
+                                source_time,
+                                sink_time,
+                                usedNe_sink,
+                                usedNe_source,
+                            )
+                            if debug:
+                                logger.debug(
+                                    f"      Called propagator.get_PSP_highmode with usedNe_sink={usedNe_sink}, usedNe_source={usedNe_source}"
+                                )
+                            # Slice sink端 (point) usedNp
+                            if usedNp_sink is not None:
+                                prop_data = prop_data[..., :usedNp_sink, :, :, :]
+                            # Slice source端 (point) usedNp
+                            if usedNp_source is not None:
+                                prop_data = prop_data[..., :usedNp_source, :]
+                        else:
+                            raise ValueError(f"Unknown propagator type: {prop_type}")
+
+                        operands_data.append(prop_data)
+                        if debug:
+                            logger.debug(
+                                f"        shape: {prop_data.shape}, dtype: {prop_data.dtype}"
+                            )
+
+                        # Handle multitime subscripts
+                        if not isinstance(source_time, (int, np.integer)) or not isinstance(
+                            sink_time, (int, np.integer)
+                        ):
+                            subscripts[idx] = "t" + subscripts[idx]
+                            have_multitime = True
+                        idx += 1
+
+                    except (AttributeError, ValueError) as e:
+                        error_msg = (
+                            f"Error getting propagator[{item[0]}] type {prop_type}: {e}\n"
+                            f"  Available methods: {[m for m in dir(propagator) if not m.startswith('_') and callable(getattr(propagator, m, None))]}\n"
+                            f"  Propagator type: {type(propagator).__name__}"
+                        )
+                        if debug:
+                            logger.debug(f"  ERROR: {error_msg}")
+                        raise RuntimeError(error_msg) from e
+
+                if debug:
+                    logger.debug(f"  Vertices (operands[1]):")
+                for vertex_idx, item in enumerate(operands[1]):
+                    vertex = vertex_list[item]
+
+                    # Determine vertex type from diagram
+                    if hasattr(diagram, "vertex_types") and diagram.vertex_types:
+                        vertex_type = diagram.vertex_types[contraction_idx][vertex_idx]
+                        if debug:
+                            logger.debug(f"    [{idx}] Vertex type: {vertex_type}")
+                    else:
+                        vertex_type = "V2V"  # Default for backward compatibility
+                        if debug:
+                            logger.debug(f"    [{idx}] No vertex type info, defaulting to V2V")
+
+                    # Get vertex data based on type
+                    if vertex_type == "V2V":
+                        vertex_data = vertex.get(time_list[item])
+                        if debug:
+                            logger.debug(f"      Called vertex[{item}].get(t={time_list[item]})")
+                    elif vertex_type == "V2P":
+                        vertex_data = vertex.get_v2p(time_list[item])
+                        if debug:
+                            logger.debug(
+                                f"      Called vertex[{item}].get_v2p(t={time_list[item]})"
+                            )
+                    elif vertex_type == "P2V":
+                        vertex_data = vertex.get_p2v(time_list[item])
+                        if debug:
+                            logger.debug(
+                                f"      Called vertex[{item}].get_p2v(t={time_list[item]})"
+                            )
+                    elif vertex_type == "P2P":
+                        vertex_data = vertex.get_p2p(time_list[item])
+                        if debug:
+                            logger.debug(
+                                f"      Called vertex[{item}].get_p2p(t={time_list[item]})"
+                            )
+                    else:
+                        raise ValueError(f"Unknown vertex type: {vertex_type}")
+
+                    operands_data.append(vertex_data)
+                    if debug:
+                        logger.debug(
+                            f"        shape: {vertex_data.shape}, dtype: {vertex_data.dtype}"
+                        )
+                    if not isinstance(time_list[item], int):
                         subscripts[idx] = "t" + subscripts[idx]
                         have_multitime = True
                     idx += 1
 
-                except (AttributeError, ValueError) as e:
-                    error_msg = (
-                        f"Error getting propagator[{item[0]}] type {prop_type}: {e}\n"
-                        f"  Available methods: {[m for m in dir(propagator) if not m.startswith('_') and callable(getattr(propagator, m, None))]}\n"
-                        f"  Propagator type: {type(propagator).__name__}"
-                    )
-                    if debug:
-                        logger.debug(f"  ERROR: {error_msg}")
-                    raise RuntimeError(error_msg) from e
-
-            if debug:
-                logger.debug(f"  Vertices (operands[1]):")
-            for vertex_idx, item in enumerate(operands[1]):
-                vertex = vertex_list[item]
-
-                # Determine vertex type from diagram
-                if hasattr(diagram, "vertex_types") and diagram.vertex_types:
-                    vertex_type = diagram.vertex_types[contraction_idx][vertex_idx]
-                    if debug:
-                        logger.debug(f"    [{idx}] Vertex type: {vertex_type}")
+                if not have_multitime:
+                    if multitime_shape:
+                        subscripts.append("t")
+                        operands_data.append([1] * len(multi_time))
+                        subscripts[-1] = subscripts[-1] + "->t"
                 else:
-                    vertex_type = "V2V"  # Default for backward compatibility
-                    if debug:
-                        logger.debug(f"    [{idx}] No vertex type info, defaulting to V2V")
+                    subscripts[-1] = subscripts[-1] + "->t"
 
-                # Get vertex data based on type
-                if vertex_type == "V2V":
-                    vertex_data = vertex.get(time_list[item])
-                    if debug:
-                        logger.debug(f"      Called vertex[{item}].get(t={time_list[item]})")
-                elif vertex_type == "V2P":
-                    vertex_data = vertex.get_v2p(time_list[item])
-                    if debug:
+                final_subscripts = ",".join(subscripts)
+                if debug:
+                    logger.debug(f"  Final subscripts: {final_subscripts}")
+                    logger.debug(f"  Operands summary:")
+                    for op_idx, op in enumerate(operands_data):
                         logger.debug(
-                            f"      Called vertex[{item}].get_v2p(t={time_list[item]})"
+                            f"    operand[{op_idx}]: shape={op.shape if hasattr(op, 'shape') else type(op)}"
                         )
-                elif vertex_type == "P2V":
-                    vertex_data = vertex.get_p2v(time_list[item])
-                    if debug:
-                        logger.debug(
-                            f"      Called vertex[{item}].get_p2v(t={time_list[item]})"
-                        )
-                elif vertex_type == "P2P":
-                    vertex_data = vertex.get_p2p(time_list[item])
-                    if debug:
-                        logger.debug(
-                            f"      Called vertex[{item}].get_p2p(t={time_list[item]})"
-                        )
-                else:
-                    raise ValueError(f"Unknown vertex type: {vertex_type}")
+                    logger.debug(f"  Attempting contraction...")
 
-                operands_data.append(vertex_data)
+                result = contract(final_subscripts, *operands_data)
+                # Distinct contraction groups of one combination multiply (they are
+                # disconnected pieces of the same graph).
+                combination_value = combination_value * result
+
                 if debug:
                     logger.debug(
-                        f"        shape: {vertex_data.shape}, dtype: {vertex_data.dtype}"
+                        f"  Contraction successful! Result shape: {result.shape if hasattr(result, 'shape') else type(result)}"
                     )
-                if not isinstance(time_list[item], int):
-                    subscripts[idx] = "t" + subscripts[idx]
-                    have_multitime = True
-                idx += 1
 
-            if not have_multitime:
-                if multitime_shape:
-                    subscripts.append("t")
-                    operands_data.append([1] * len(multi_time))
-                    subscripts[-1] = subscripts[-1] + "->t"
-            else:
-                subscripts[-1] = subscripts[-1] + "->t"
-
-            final_subscripts = ",".join(subscripts)
-            if debug:
-                logger.debug(f"  Final subscripts: {final_subscripts}")
-                logger.debug(f"  Operands summary:")
-                for op_idx, op in enumerate(operands_data):
-                    logger.debug(
-                        f"    operand[{op_idx}]: shape={op.shape if hasattr(op, 'shape') else type(op)}"
-                    )
-                logger.debug(f"  Attempting contraction...")
-
-            result = contract(final_subscripts, *operands_data)
-            diagram_value[-1] = diagram_value[-1] * result
-
-            if debug:
-                logger.debug(
-                    f"  Contraction successful! Result shape: {result.shape if hasattr(result, 'shape') else type(result)}"
-                )
-
+            # Classes add: they are the terms of one vertex, and the contraction is
+            # linear in that vertex's block.
+            scene_total = scene_total + combination_value
+        diagram_value.append(scene_total)
         # Apply this scene's own coefficient.  Every scene has been contracted with
         # its own subscripts by now, so the sum over scenes is the Horvitz-Thompson
         # estimate; a single weight per state would not be (F7.3).
