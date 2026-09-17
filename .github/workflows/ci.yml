@@ -16,6 +16,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # test/weak_field.* are git-lfs objects; without this the checkout holds
+          # pointer files and test_load / test_elemental / test_displacement_elemental
+          # fail at collection time.
+          lfs: true
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
