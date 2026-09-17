@@ -515,6 +515,7 @@ class QuarkDiagram:
         usedNp: int = None,
         debug: bool = False,
         validate: bool = True,
+        leg_offsets: List = None,
     ) -> None:
         """
         Initialize QuarkDiagram.
@@ -529,9 +530,17 @@ class QuarkDiagram:
                 line, so a vertex is isolated, a meson, or a baryon at one end).
                 Pass False only for mechanical fragments that are not complete
                 diagrams.
+            leg_offsets: Per-vertex term offsets, one entry per ``vertex_list``
+                element.  Each entry is either ``None`` (the vertex keeps both legs
+                on its anchor) or a list of ``((left_delta, right_delta), [term
+                indices])`` offset classes as :func:`offset_classes` produces.  These
+                come from the operator content, which is why they are an explicit
+                input: a diagram built from irrep rows alone has no data handle and
+                therefore no offsets.
         """
         self.adjacency_matrix = adjacency_matrix
         self.vertex_list = vertex_list
+        self.leg_offsets = leg_offsets
         self.L = L  # Spatial lattice size
         self.usedNp = usedNp  # Number of sampled points
         self.operands = []
@@ -707,6 +716,7 @@ class QuarkDiagram:
                 L=self.L,
                 usedNp=self.usedNp,
                 debug=self.debug,
+                leg_offsets=getattr(self, "leg_offsets", None),
             )
 
             # Expand this diagram into scenes (stored in new_diagram.scene_diagrams)
@@ -871,6 +881,7 @@ class StateExpandedDiagram(QuarkDiagram):
         L: int = None,
         usedNp: int = None,
         debug: bool = False,
+        leg_offsets: List = None,
     ) -> None:
         """
         Initialize StateExpandedDiagram.
@@ -882,11 +893,13 @@ class StateExpandedDiagram(QuarkDiagram):
             L: Spatial lattice size (total number of lattice points = L^3)
             usedNp: Number of sampled points (default: usedNp from Current vertex)
             debug: Enable debug output
+            leg_offsets: Per-vertex offset classes (see QuarkDiagram.leg_offsets).
         """
 
         # Override base class initialization for StateExpandedDiagram specific fields
         self.adjacency_matrix = adjacency_matrix
         self.vertex_list = vertex_list
+        self.leg_offsets = leg_offsets
         self.L = L
         self.usedNp = usedNp
         self.debug = debug
@@ -1304,6 +1317,26 @@ class StateExpandedDiagram(QuarkDiagram):
         self.vertex_infos.append(vertex_infos)
         self.operands_data.append(None)  # Placeholder for operands data
 
+    def _offset_terms_for(self, vertex_index):
+        """Offset-class entries for one vertex, or ``None`` when it has no axis.
+
+        One class means every term sits on the same slice, so there is nothing to
+        choose and the vertex keeps the single-contraction arithmetic.
+        """
+        offsets = getattr(self, "leg_offsets", None)
+        if not offsets or vertex_index >= len(offsets):
+            return None
+        entry = offsets[vertex_index]
+        if not entry:
+            return None
+        # One class whose offsets are both zero means every term sits on the anchor:
+        # the vertex block already sums them and nothing shifts, so there is no axis.
+        # A single *splitting* class is different -- its legs still land on two
+        # slices -- so the test is on the offsets, not on the class count.
+        if len(entry) == 1 and tuple(entry[0][0]) == (0, 0):
+            return None
+        return list(entry)
+
     def expand_scenes(self) -> None:
         """
         Expand this state-expanded diagram into point coincidence scenes.
@@ -1325,13 +1358,54 @@ class StateExpandedDiagram(QuarkDiagram):
         N = self.usedNp  # Number of sampled points
         M = L**3  # Total number of lattice points (F5.6)
 
-        # Collect sampling groups from state_dict if not already collected
-        self._collect_sampling_groups(self._vertex_state)
+        # Offset-class combinations (02 SS3).  A vertex whose terms split its legs
+        # contributes one axis per distinct (left_delta, right_delta) pair, and the
+        # choice matters here rather than at evaluation: the pool key contains the
+        # leg's time, so a (0,0) class (both legs on the anchor, one shared pool) and
+        # a (0,1) class (legs split, two pools) enumerate *different* coincidence
+        # scenes.  That is why the skeleton count is the sum over combinations of
+        # their scene counts, not scene count times class count.
+        class_axes = []
+        for vertex_idx in range(len(self._vertex_state)):
+            classes = self._offset_terms_for(vertex_idx)
+            if classes:
+                class_axes.append((vertex_idx, classes))
+        if class_axes:
+            combinations = []
+            for choice in iter_product(
+                *[range(len(classes)) for _, classes in class_axes]
+            ):
+                selected = [((0, 0), [None])] * len(self._vertex_state)
+                for (vertex_idx, classes), class_index in zip(class_axes, choice):
+                    selected[vertex_idx] = classes[class_index]
+                combinations.append(tuple(selected))
+        else:
+            combinations = [tuple([((0, 0), [None])] * len(self._vertex_state))]
 
         # Initialize lists for storing scene diagrams, weights, and constraints
         self.scene_diagrams = []
         self.scene_weights = []
         self.scene_constraints = []
+
+        for vertex_terms in combinations:
+            self._expand_scenes_for(vertex_terms, M, N)
+
+        if self.debug:
+            logger.debug(
+                f"Generated {len(self.scene_diagrams)} scene diagrams over "
+                f"{len(combinations)} offset-class combinations"
+            )
+
+    def _expand_scenes_for(self, vertex_terms, M, N) -> None:
+        """Enumerate the coincidence scenes for one offset-class combination.
+
+        ``vertex_terms`` is the per-vertex offset-class choice; it decides the pool
+        key of every point end, and therefore which ends can share a coordinate.
+        """
+        from itertools import product as iter_product
+
+        self.sampling_groups = {}
+        self._collect_sampling_groups(self._vertex_state, vertex_terms=vertex_terms)
 
         if not self.sampling_groups:
             # No point sampling needed, create a single SceneExpandedDiagram
@@ -1433,42 +1507,67 @@ class StateExpandedDiagram(QuarkDiagram):
         if self.debug:
             logger.debug(f"Generated {len(self.scene_diagrams)} scene diagrams")
 
-    def _collect_sampling_groups(self, vertex_state: tuple) -> None:
-        """
-        Collect sampling group information from vertex_state.
+    def _collect_sampling_groups(self, vertex_state: tuple, vertex_terms=None) -> None:
+        """Collect sampling groups from ``vertex_state``.
 
-        Groups vertices by their vertex_list index to determine which points come from the same sampling set.
-        Only vertices with 'p' state (point sampling) are recorded.
+        A sampling group is keyed by ``(declared group id, leg time)`` (F5.1).  The
+        declared id is the ``vertex_list`` entry -- that is the part the caller
+        chooses -- and the leg's time comes from the vertex's anchor plus that leg's
+        own term offset, which is what makes designs A and B one rule rather than two
+        code paths (02 SS4):
+
+        * two legs at the same time share the group and their coincidence patterns
+          are enumerated (design B, all points distinct within a slice);
+        * two legs at different times land in different groups automatically, so no
+          coincidence is asserted between them -- which is the case the old code got
+          silently wrong.
+
+        Both legs of one vertex share its anchor, so "same time" inside a vertex is
+        just "same offset".
 
         Args:
-            vertex_state: Tuple of dicts, one for each vertex, each with "left"/"right" -> 'v'/'p'
+            vertex_state: Tuple of dicts, one per vertex, each with left/right -> 'v'/'p'.
+            vertex_terms: Per-vertex offset-class choice, as produced by
+                :func:`offset_classes`.  ``None`` means no term-wise handling.
         """
-        # Group vertices by their vertex_list index
-        # vertex_list index determines independent sampling groups
         for vertex_idx in range(len(vertex_state)):
-            # Get the group_id from vertex_list
             group_id = self.vertex_list[vertex_idx]
-
-            # Check left state
-            left_state = vertex_state[vertex_idx]["left"]
-            if left_state == "p":
-                if group_id not in self.sampling_groups:
-                    self.sampling_groups[group_id] = []
-                self.sampling_groups[group_id].append((vertex_idx, "left"))
-
-            # Check right state
-            right_state = vertex_state[vertex_idx]["right"]
-            if right_state == "p":
-                if group_id not in self.sampling_groups:
-                    self.sampling_groups[group_id] = []
-                self.sampling_groups[group_id].append((vertex_idx, "right"))
+            for side in ("left", "right"):
+                if vertex_state[vertex_idx][side] != "p":
+                    continue
+                leg_time = self._leg_time(vertex_idx, side, vertex_terms)
+                key = (group_id, leg_time)
+                self.sampling_groups.setdefault(key, []).append((vertex_idx, side))
 
         if self.debug:
             logger.debug(f"\n  Collected sampling groups:")
-            for group_id, positions in self.sampling_groups.items():
+            for key, positions in self.sampling_groups.items():
                 logger.debug(
-                    f"    Group {group_id}: {positions} ({len(positions)} point positions)"
+                    f"    Group {key}: {positions} ({len(positions)} point positions)"
                 )
+
+    def _leg_time(self, vertex_idx, side, vertex_terms):
+        """The leg's offset from its vertex anchor, for sampling-group identity.
+
+        Only the offset matters, not the absolute time: both legs of a vertex share
+        its anchor, so "same time" reduces to "same offset".  Returning the offset
+        keeps the skeleton independent of the actual time, as layer B requires
+        (02 SS4).
+
+        The offsets come from the operator, which is why they enter as an explicit
+        argument: a ``QuarkDiagram`` built from irrep rows alone has no data handles
+        and therefore no offsets, and in that case every leg sits on the anchor.
+        """
+        if vertex_terms is None:
+            return 0
+        entry = vertex_terms[vertex_idx] if vertex_idx < len(vertex_terms) else None
+        if not entry:
+            return 0
+        # An entry is ``((left_delta, right_delta), [term indices])``; accept a bare
+        # offset pair too, so callers can supply either form.
+        offsets = entry[0] if isinstance(entry[0], (tuple, list)) else entry
+        left, right = offsets
+        return int(left) if side == "left" else int(right)
 
     def _build_scene_constraints(
         self, partitions_and_positions: List[Tuple[List[int], List[Tuple[int, str]]]]
@@ -1663,16 +1762,17 @@ class SceneExpandedDiagram(QuarkDiagram):
 
 
 
-def _first_term(term_indices):
-    """The representative term index of an offset class, or ``None``."""
-    if not term_indices:
+def _first_term(entry):
+    """The representative term index of an offset-class entry, or ``None``."""
+    if not entry:
         return None
-    return term_indices[0]
+    indices = entry[1]
+    return indices[0] if indices else None
 
 
 def _vertex_terms_for(vertex_terms, vertex_index):
-    """The offset class chosen for one vertex, or ``None`` when there is no axis."""
-    if vertex_terms is None:
+    """The offset-class entry chosen for one vertex, or ``None`` if there is none."""
+    if vertex_terms is None or vertex_index >= len(vertex_terms):
         return None
     return vertex_terms[vertex_index]
 
@@ -1849,9 +1949,10 @@ def compute_diagrams_multitime(
         if not _supports_vertex_terms(vertex):
             continue
         classes = offset_classes(vertex)
-        if len(classes) == 1:
-            # Every term sits on one slice: no axis, and the vertex block already
-            # sums its terms, so this must stay byte-identical to today's path.
+        if len(classes) == 1 and tuple(classes[0][0]) == (0, 0):
+            # Every term sits on the anchor: no axis, and the vertex block already
+            # sums its terms, so this must stay byte-identical to today's path.  A
+            # single *splitting* class is different and still needs its shifted legs.
             continue
         anchor = time_list[vertex_index]
         if not isinstance(anchor, (int, np.integer)):
@@ -1872,12 +1973,12 @@ def compute_diagrams_multitime(
 
         combinations = []
         for choice in _iter_product(*[range(len(classes)) for _, classes in axes]):
-            terms = [None] * len(vertex_list)
+            chosen = [((0, 0), [None])] * len(vertex_list)
             for (vertex_index, classes), class_index in zip(axes, choice):
-                terms[vertex_index] = classes[class_index][1]
-            combinations.append(tuple(terms))
+                chosen[vertex_index] = classes[class_index]
+            combinations.append(tuple(chosen))
     else:
-        combinations = [tuple([None] * len(vertex_list))]
+        combinations = [(tuple([((0, 0), [None])] * len(vertex_list)))]
 
     for diagram_idx, (diagram, scene_coefficient) in enumerate(diagrams_to_compute):
         if debug:
