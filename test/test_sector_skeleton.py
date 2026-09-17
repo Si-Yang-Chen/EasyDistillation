@@ -236,3 +236,48 @@ def test_four_sector_sum_differs_from_the_low_mode_sector_alone():
     assert not np.isclose(np.sum(every_scene), np.sum(low_mode_only)), (
         "the four-sector sum equals the vv-only value, so the check is vacuous"
     )
+
+
+def test_point_ends_project_the_leg_not_the_vertex_block():
+    """F7.4: the high-mode complement belongs to the propagator leg.
+
+    A point-ended leg replaces low-mode content the ``vv`` sector already contains, so
+    it must contribute only the complement -- and that projection needs the overlap
+    matrix, which only ``PropagatorWithCurrent`` holds.  ``Current`` has no overlap
+    matrix at all, so it cannot project its own block, and it must not try: a vertex
+    block is the operator's matrix element between its two ends, not a leg.
+    """
+    import inspect
+
+    from lattice.propagators import Current, PropagatorWithCurrent
+
+    assert "overlap" not in inspect.getsource(Current.__init__), (
+        "a Current cannot project its own block: it holds no overlap matrix"
+    )
+    assert not hasattr(Current, "overlap_matrix")
+    assert "overlap" in inspect.getsource(PropagatorWithCurrent.__init__), (
+        "the projection must live on the propagator, which holds the overlap matrix"
+    )
+
+    # And the graph must actually take the projected accessor for a point leg.
+    set_backend("numpy")
+    propagator = _Propagator()
+    prepared = calc_diagram_prepare(
+        [_marked_pion_diagram()], propagator_map={"S^q": propagator}
+    )
+    vertices = {v.hadron_name: _Vertex() for v in prepared.irrep_vertices}
+    calc_diagram_bind(prepared, lambda v: vertices[v.hadron_name])
+    calc_diagram_eval(prepared, {0: 0, 1: np.arange(2)})
+
+    # The stub records which accessor ran: PSV/VSP/PSP only exist as the high-mode
+    # methods, so seeing them proves the leg took the projected path.
+    assert {"PSV", "VSP"} <= set(propagator.calls), (
+        f"point legs must go through the high-mode accessors, saw {sorted(set(propagator.calls))}"
+    )
+    vertex_calls = {call for vertex in vertices.values() for call in vertex.calls}
+    assert vertex_calls <= {"get", "get_v2p", "get_p2v", "get_p2p"}, (
+        f"a vertex block must never be projected, saw {sorted(vertex_calls)}"
+    )
+    assert {"get_v2p", "get_p2v"} <= vertex_calls, (
+        "the vertex blocks themselves must still be fetched for the point sectors"
+    )
