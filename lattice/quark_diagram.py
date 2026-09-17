@@ -1,6 +1,7 @@
 from itertools import product
 import logging
 import os
+from fractions import Fraction
 from time import perf_counter
 from typing import Callable, Dict, List, Union, Any, Tuple, Optional
 
@@ -11,6 +12,7 @@ from sympy import Add, Mul, Pow, S, simplify
 import hashlib
 
 from lattice.spatial_structure import HadronIrrepRow
+from lattice.scene_coefficients import labelled_set_partitions, scene_coefficients
 
 from .backend import get_backend
 
@@ -1314,9 +1316,14 @@ class StateExpandedDiagram(QuarkDiagram):
         """
         from itertools import product as iter_product
 
-        # Use L and usedNp from instance (set during initialization)
-        M = self.L  # Total number of lattice points (L^3)
+        from lattice.scene_coefficients import scene_coefficients
+
+        # ``L`` here is the spatial extent; the number of lattice points is L**3.
+        # ``calculate_sampling_weight`` applies that cube internally, so keep the
+        # same convention at this boundary and cube only when solving.
+        L = self.L  # spatial extent; total points = L**3
         N = self.usedNp  # Number of sampled points
+        M = L**3  # Total number of lattice points (F5.6)
 
         # Collect sampling groups from state_dict if not already collected
         self._collect_sampling_groups(self._vertex_state)
@@ -1353,31 +1360,44 @@ class StateExpandedDiagram(QuarkDiagram):
         if self.debug:
             logger.debug(f"Generating scenes for {len(self.sampling_groups)} sampling groups")
 
-        # Enumerate scenes for each sampling group
-        # For multiple independent groups, we need Cartesian product of their scenes
+        # Enumerate scenes for each sampling group.
+        #
+        # The scene coefficient is NOT w(k): a scene's contraction merges
+        # subscripts, so it evaluates a free sum over its blocks and therefore also
+        # counts tuples whose coincidence pattern is finer than the scene's.  The
+        # unbiased weight is the solution of the zeta inversion Z^T c = w on the
+        # refinement order -- see lattice/scene_coefficients.py and 02 SS5.0.
+        # At r = 1 it collapses to w(1), which is what this code used to assume.
         group_scenes = {}
         for group_id, positions in self.sampling_groups.items():
             r = len(positions)
-            scenes = enumerate_point_scenes(r, M, N)
+            partitions = labelled_set_partitions(r)
+            coefficients = scene_coefficients(r, M, N)
             group_scenes[group_id] = [
-                (partition, weight, positions) for partition, weight in scenes
+                (partition, coefficient, positions)
+                for partition, coefficient in zip(partitions, coefficients)
             ]
 
             if self.debug:
-                logger.debug(f"  Group {group_id}: {r} positions, {len(scenes)} scenes")
+                logger.debug(
+                    f"  Group {group_id}: {r} positions, {len(partitions)} scenes, "
+                    f"coefficients={[str(c) for c in coefficients]}"
+                )
 
         # Generate Cartesian product of scenes across all groups
         group_ids = list(group_scenes.keys())
         scene_combinations = iter_product(*[group_scenes[gid] for gid in group_ids])
 
         for scene_combo in scene_combinations:
-            # Calculate total weight (product of weights from each group)
-            total_weight = 1.0
+            # Coefficients multiply across independently sampled groups, exactly as
+            # the weights did; the value itself is now a scene coefficient rather
+            # than w(k).
+            total_coefficient = Fraction(1)
             all_positions = []
             all_partitions = []
 
-            for group_idx, (partition, weight, positions) in enumerate(scene_combo):
-                total_weight *= weight
+            for group_idx, (partition, coefficient, positions) in enumerate(scene_combo):
+                total_coefficient *= coefficient
                 all_positions.extend(positions)
                 all_partitions.append((partition, positions))
 
@@ -1386,7 +1406,7 @@ class StateExpandedDiagram(QuarkDiagram):
 
             if self.debug:
                 logger.debug(
-                    f"    Scene: weight={total_weight:.6f}, constraints={constraints}"
+                    f"    Scene: coefficient={total_coefficient}, constraints={constraints}"
                 )
 
             # Create a new SceneExpandedDiagram for this scene combination
@@ -1407,7 +1427,7 @@ class StateExpandedDiagram(QuarkDiagram):
             scene_diagram.unify_vertex_point_color_indices()
 
             self.scene_diagrams.append(scene_diagram)
-            self.scene_weights.append(total_weight)
+            self.scene_weights.append(total_coefficient)
             self.scene_constraints.append(constraints)
 
         if self.debug:
@@ -1655,36 +1675,42 @@ def compute_diagrams_multitime(
     Compute diagram values with automatic sampling weight application.
 
     This function automatically expands diagrams with current vertices into multiple
-    state combinations and point coincidence scenes. Each scene has a sampling weight
-    (scene_weight) that compensates for the finite sampling of spatial points.
+    state combinations and point coincidence scenes. Each scene carries its own
+    coefficient that compensates for the finite sampling of spatial points.
 
-    The sampling weights are calculated as w(k) = C(L^3,k)/C(usedNp,k) where:
-    - L = spatial lattice size (total points = L^3)
-    - usedNp = number of sampled points
-    - k = number of distinct points in this scene
+    The coefficients are NOT ``w(k) = C(L^3,k)/C(usedNp,k)``. A scene's contraction
+    merges subscripts, so it evaluates a free sum over its blocks and therefore also
+    counts tuples whose coincidence pattern is finer than the scene's; the unbiased
+    coefficient is the solution of the zeta inversion ``Z^T c = w`` on the
+    refinement order (see ``lattice.scene_coefficients`` and 02 SS5.0). At r = 1 it
+    collapses to ``w(1)``, which is what this code used to assume.
 
-    After computing each diagram's contraction, the result is multiplied by its
-    scene_weight. The final result is the sum of all weighted scene contributions.
-
-    See localized_blending.md for mathematical formulation.
+    Each scene is contracted with **its own** subscripts and multiplied by **its own**
+    coefficient, and the results are summed.  Collapsing to one coefficient per state
+    would apply one scene's weight to every scene's algebra.
     """
     backend = get_backend()
 
-    # Auto-expand diagrams if they have vertex_list and expanded_diagrams
+    # Expand each diagram into its (sector x scene) units.  A state's scene list is
+    # the unit of iteration: the scenes carry the coincidence constraints and the
+    # coefficients, so consuming the state instead would drop both (02 SS8 gap 1/2).
     diagrams_to_compute = []
     for diagram in diagrams:
-        if hasattr(diagram, "expanded_diagrams") and diagram.expanded_diagrams:
-            if debug:
-                logger.debug(
-                    f"Auto-expanding diagram into {len(diagram.expanded_diagrams)} diagrams"
-                )
-            diagrams_to_compute.extend(diagram.expanded_diagrams)
+        states = getattr(diagram, "expanded_diagrams", None) or []
+        if states:
+            for state in states:
+                scenes = getattr(state, "scene_diagrams", None) or []
+                if scenes:
+                    for scene, coefficient in zip(scenes, state.scene_weights):
+                        diagrams_to_compute.append((scene, coefficient))
+                else:
+                    diagrams_to_compute.append((state, 1))
         else:
-            diagrams_to_compute.append(diagram)
+            diagrams_to_compute.append((diagram, 1))
 
     if debug and len(diagrams_to_compute) != len(diagrams):
         logger.debug(
-            f"Total diagrams after expansion: {len(diagrams_to_compute)} (from {len(diagrams)} input diagrams)"
+            f"Total scene contractions: {len(diagrams_to_compute)} (from {len(diagrams)} input diagrams)"
         )
 
     diagram_value = []
@@ -1696,10 +1722,11 @@ def compute_diagrams_multitime(
             else:
                 if id(multi_time) != id(time):
                     raise NotImplementedError("only support one multitime yet")
-    for diagram_idx, diagram in enumerate(diagrams_to_compute):
+    for diagram_idx, (diagram, scene_coefficient) in enumerate(diagrams_to_compute):
         if debug:
             logger.debug(f"\n{'='*80}")
-            logger.debug(f"Processing diagram {diagram_idx}")
+            logger.debug(f"Processing scene contraction {diagram_idx}")
+            logger.debug(f"  coefficient: {scene_coefficient}")
             logger.debug(f"{'='*80}")
         diagram_value.append(1.0)
         for contraction_idx, (operands, subscripts) in enumerate(
@@ -1922,15 +1949,18 @@ def compute_diagrams_multitime(
                     f"  Contraction successful! Result shape: {result.shape if hasattr(result, 'shape') else type(result)}"
                 )
 
-        # Apply scene_weight if this diagram has sampling weight
+        # Apply this scene's own coefficient.  Every scene has been contracted with
+        # its own subscripts by now, so the sum over scenes is the Horvitz-Thompson
+        # estimate; a single weight per state would not be (F7.3).
         if hasattr(diagram, "scene_weights") and diagram.scene_weights:
-            scene_weight = diagram.scene_weights[0]
-            diagram_value[-1] = diagram_value[-1] * scene_weight
+            raise ValueError(
+                "a scene must be contracted one at a time: this entry still carries "
+                "a scene_weights list, so a whole state reached the contraction loop"
+            )
+        if scene_coefficient != 1:
+            diagram_value[-1] = diagram_value[-1] * scene_coefficient
             if debug:
-                logger.debug(f"\n  Applied scene_weight: {scene_weight}")
-                logger.debug(
-                    f"  Final diagram value shape: {diagram_value[-1].shape if hasattr(diagram_value[-1], 'shape') else type(diagram_value[-1])}"
-                )
+                logger.debug(f"\n  Applied scene coefficient: {scene_coefficient}")
 
     return backend.asarray(diagram_value)
 
