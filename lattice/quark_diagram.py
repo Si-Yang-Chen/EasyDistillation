@@ -69,6 +69,26 @@ _SUB_SPIN = "ABCDEFGHIJKLM"  # Spin indices
 _SUB_POINT = "nopqrstuvwxyz"  # Point indices
 _SUB_COLOR = "abcdefghijklm"  # Color indices
 
+# Each propagator consumes TWO label slots -- ``node`` and ``node + 1``, one per end
+# -- so a 13-letter alphabet caps a connected contraction group at 6 quark lines, not
+# 13.  Exceeding it used to surface as a bare IndexError from inside subscript
+# construction, which says nothing about the cause (02 SS8 gap 9).
+MAX_PROPAGATORS_PER_GROUP = min(
+    len(_SUB_SPIN), len(_SUB_VECTOR), len(_SUB_POINT), len(_SUB_COLOR)
+) // 2
+
+
+def _require_label_capacity(propagator_count):
+    """Fail with the limit when a group has more quark lines than labels allow."""
+    if propagator_count > MAX_PROPAGATORS_PER_GROUP:
+        raise ValueError(
+            f"this contraction group has {propagator_count} quark lines, but only "
+            f"{MAX_PROPAGATORS_PER_GROUP} can be labelled: each propagator needs two "
+            f"spin/eigenvector/point/colour slots and the fixed einsum alphabet has "
+            f"{len(_SUB_SPIN)} of each. Split the diagram or widen the alphabet (F1.1)."
+        )
+
+
 
 def integer_partitions(n: int) -> List[List[int]]:
     """
@@ -463,6 +483,7 @@ class QuarkDiagramOriginal:
             propagator_operands = []
             propagator_subscripts = []
             node = 0
+            _require_label_capacity(len(propagators))
             for propagator in propagators:
                 propagator_operands.append(propagator)
                 propagator_subscripts.append(
@@ -782,6 +803,7 @@ class QuarkDiagram:
             propagator_operands = []
             propagator_subscripts = []
             node = 0
+            _require_label_capacity(len(propagators))
             for propagator in propagators:
                 propagator_operands.append(propagator)
                 propagator_subscripts.append(
@@ -826,6 +848,7 @@ class QuarkDiagram:
             # Initialize vertex_point_info for trivial case
             vertex_point_info = {}
             node = 0
+            _require_label_capacity(len(propagators))
             for prop_idx, propagator in enumerate(propagators):
                 src, snk = propagator[1], propagator[2]
                 if src not in vertex_point_info:
@@ -1052,6 +1075,7 @@ class StateExpandedDiagram(QuarkDiagram):
 
         node = 0  # Track label position, compatible with analyse_v2v
 
+        _require_label_capacity(len(propagators))
         for prop_idx, propagator in enumerate(propagators):
             prop_id, src, snk = propagator
 
