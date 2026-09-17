@@ -43,6 +43,20 @@ from .backend import get_backend, log_gpu_memory
 logger = logging.getLogger(__name__)
 
 
+def _is_full_time_scan(time, lt):
+    """Whether an array time is the canonical full scan a relative-time cache holds.
+
+    The tilde caches are indexed by relative time, so an array-order block may only
+    be stored when the array *is* the full relative-time stack.  A partial scan, or a
+    reordered one, must not be cached under that name: it would be returned later for
+    a different request and silently permute or truncate the result.
+    """
+    if isinstance(time, (int, np.integer)):
+        return False
+    values = np.asarray(time).reshape(-1)
+    return values.size == int(lt) and np.array_equal(values, np.arange(int(lt)))
+
+
 def _normalize_extent(value, available, name):
     if available is None:
         raise ValueError(f"cannot determine available {name}")
@@ -1911,8 +1925,19 @@ class PropagatorWithCurrent(Propagator):
             return tilde_S
         else:
             # Multi-time case
+            if not isinstance(t_source, (int, np.integer)):
+                # Scanning the source while the sink stays fixed is not verified:
+                # Propagator.get and get_VSP disagree between the array and the
+                # pointwise calls in this direction, so any number returned here
+                # would be unverified rather than merely unsupported (F7.7).  The
+                # supported direction is a scalar source with a scanned sink.
+                raise NotImplementedError(
+                    "scanning t_source is not supported for a current-insertion "
+                    "high-mode block; loop t_source and call once per slice, or scan "
+                    "the sink instead"
+                )
+
             if isinstance(t_source, int):
-                t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
                 M_conj_t = M_conj[t_source]  # [Ne, Np, Nc]
                 correction = contract(
                     "tabij,jxc->tabixc",
@@ -1920,35 +1945,41 @@ class PropagatorWithCurrent(Propagator):
                     M_conj_t,
                 )
                 tilde_S = S_vsp - correction
-                if should_cache_highmode:
+                if should_cache_highmode and _is_full_time_scan(t_sink, self.Lt):
                     if self.debug:
                         logger.debug(f"caching full tilde_S_vsp for t_source={t_source}")
                     self.tilde_S_vsp_cache = tilde_S
                     self.tilde_S_vsp_dagger = self._dagger_vsp(tilde_S)
                     self.tilde_S_vsp_cached_time = t_source
                 log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_source=int)")
-                return tilde_S[t_rel]
-            else:  # t_sink is int
-                t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
-                M_conj_t = M_conj[t_rel]  # [Lt, Ne, Np, Nc]
+                # ``S_vsp`` already comes back stacked in request order when one end
+                # is an array, and the correction is too.  Re-indexing by ``t_rel``
+                # would apply the relative time twice: an IndexError for a short
+                # array, and a silent permutation for a full one.
+                return tilde_S
+            else:  # t_sink is int, so t_source is the scanned end
+                # The point end here is the SOURCE, so the overlap matrix is read at
+                # each requested source time -- not at the relative time t_rel, which
+                # would sample the wrong row and silently permute the result.
+                M_conj_t = M_conj[backend.asarray(t_source)]  # [t, Ne, Np, Nc]
                 correction = contract(
                     "tabij,tjxc->tabixc",
                     S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                     M_conj_t,
                 )
                 tilde_S = S_vsp - correction
-                if should_cache_highmode:
+                if should_cache_highmode and _is_full_time_scan(t_source, self.Lt):
                     if self.debug:
                         logger.debug(f"caching full tilde_S_vsp for t_source={t_source}")
                     self.tilde_S_psv_dagger = tilde_S
                     self.tilde_S_psv_cache = self._dagger_vsp(tilde_S)
                     self.tilde_S_psv_cached_time = t_sink
-                    return self.tilde_S_psv_dagger
+                    return tilde_S
                 if self.debug:
                     logger.debug(f"  tilde_S_vsp shape: {tilde_S.shape}")
 
                 log_gpu_memory(f"get_VSP_highmode(after, multi_time, t_sink=int)")
-                return tilde_S[t_rel]
+                return tilde_S
 
     def get_PSV_highmode(
         self, t_source, t_sink, usedNe_sink=None, *, usedNe_source=None
@@ -2067,9 +2098,22 @@ class PropagatorWithCurrent(Propagator):
             return tilde_S
         else:
             # Multi-time case
+            if not isinstance(t_source, (int, np.integer)):
+                # Scanning the source while the sink stays fixed is not verified:
+                # Propagator.get and get_VSP disagree between the array and the
+                # pointwise calls in this direction, so any number returned here
+                # would be unverified rather than merely unsupported (F7.7).  The
+                # supported direction is a scalar source with a scanned sink.
+                raise NotImplementedError(
+                    "scanning t_source is not supported for a current-insertion "
+                    "high-mode block; loop t_source and call once per slice, or scan "
+                    "the sink instead"
+                )
+
             if isinstance(t_source, int):
-                t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
-                M_t = M[t_rel]  # [t, Ne, Np, Nc]
+                # The point end here is the SINK, so the overlap matrix is read at
+                # each requested sink time, not at the relative time.
+                M_t = M[backend.asarray(t_sink)]  # [t, Ne, Np, Nc]
 
                 # M_t: [t, Ne, Np, Nc] where M_t[t, j, x, c] = M_{xj,c} = <eta_x,c| xi_j>
                 #   Index order: t (Lt, 0th), j (Ne, 1st), x (Np, 2nd), c (Nc, 3rd)
@@ -2082,36 +2126,37 @@ class PropagatorWithCurrent(Propagator):
                     S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                 )
                 tilde_S = S_psv - correction
-                if should_cache_highmode:
+                if should_cache_highmode and _is_full_time_scan(t_sink, self.Lt):
                     if self.debug:
                         logger.debug(f"caching full tilde_S_psv for t_source={t_source}")
                     self.tilde_S_psv_cache = tilde_S
                     self.tilde_S_psv_dagger = self._dagger_psv(tilde_S)
                     self.tilde_S_psv_cached_time = t_source
                 log_gpu_memory(f"get_PSV_highmode(after, multi_time, t_source=int)")
-                return tilde_S[t_rel]
-            else:  # t_sink is int
-                t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
-                M_t = M[t_sink]  # [t, Ne, Np, Nc]
-                # M_t: [t, Ne, Np, Nc] where M_t[t, j, x, c] = M_{xj,c} = <eta_x,c| xi_j>
-                #   Index order: t (Lt, 0th), j (Ne, 1st), x (Np, 2nd), c (Nc, 3rd)
+                # Already stacked in request order; see the note in get_VSP_highmode.
+                return tilde_S
+            else:  # t_sink is int, so the sink time is the single slice
+                # The point end is the sink, which here is the scalar time, so M has
+                # no time axis to contract against the stacked VSV.
+                M_t = M[t_sink]  # [Ne, Np, Nc]
+                # M_t: [Ne, Np, Nc] where M_t[j, x, c] = M_{xj,c} = <eta_x,c| xi_j>
                 # S_vsv: [t, Ns, Ns, Ne, Ne] where S_{j,i} = <xi_j| S |xi_i>
-                #   Index order: t, s1, s2, j (sink, 3rd), i (source, 4th)
-                # Contract j: sum_j M_t[t, j, x, c] * S_vsv[t, s1, s2, j, i] -> [t, s1, s2, x, c, i]
+                # Contract j: sum_j M_t[j, x, c] * S_vsv[t, s1, s2, j, i]
+                #   -> [t, s1, s2, x, c, i]
                 correction = contract(
-                    "tjxc,abji->tabxci",
+                    "jxc,tabji->tabxci",
                     M_t,
                     S_vsv[:, :, :, :usedNe_sink, :usedNe_source],
                 )
                 tilde_S = S_psv - correction
-                if should_cache_highmode:
+                if should_cache_highmode and _is_full_time_scan(t_source, self.Lt):
                     if self.debug:
                         logger.debug(f"caching full tilde_S_psv for t_source={t_source}")
                     self.tilde_S_psv_cache = tilde_S
                     self.tilde_S_psv_dagger = self._dagger_psv(tilde_S)
                     self.tilde_S_psv_cached_time = t_source
                 log_gpu_memory(f"get_PSV_highmode(after, multi_time, t_sink=int)")
-                return tilde_S[t_rel]
+                return tilde_S
 
     def get_PSP_highmode(self, t_source, t_sink, usedNe_sink=None, usedNe_source=None):
         """Return the PSP high-mode propagator, reusing an identical last request."""
@@ -2238,6 +2283,16 @@ class PropagatorWithCurrent(Propagator):
             M_full[:, :usedNe_source, :, :] if usedNe_source != self.usedNe else M_full
         ).conj()
 
+        if not is_single_time:
+            # The PSP array paths did not reproduce the pointwise results before or
+            # after this change, so they are unverified (F7.3 not yet met).  Raising
+            # keeps a plausible wrong number from looking like an answer (F7.7).
+            raise NotImplementedError(
+                "array-time PSP high-mode blocks are not verified: the projection "
+                "disagrees with the pointwise result in both directions.  Loop the "
+                "scanned time and call this once per slice."
+            )
+
         if is_single_time:
             t_rel = (t_sink - t_source) % self.Lt
             M_sink_t = M_sink[t_sink]  # [Ne_sink, Np, Nc]
@@ -2288,55 +2343,14 @@ class PropagatorWithCurrent(Propagator):
             tilde_S = term1 - term2 - term3
             log_gpu_memory(f"get_PSP_highmode(after, single_time)")
         else:
-            # Multi-time case
-            term1 = S_psp
-            if isinstance(t_source, int):
-                t_rel = (backend.asarray(t_sink) - t_source) % self.Lt
-                M_sink_t = M_sink[t_rel]  # [Ne_sink, Np, Nc]
-                M_source_t = M_source[t_source]  # [Ne_source, Np, Nc]
-                if usedNe_sink == 0:
-                    term2 = 0
-                else:
-                    term2 = contract("ixc,tabiyd->tabxcyd", M_sink_t, S_vsp_tilde)
-                if usedNe_source == 0:
-                    term3 = 0
-                else:
-                    term3 = contract(
-                        "abxcj,jyd->tabxcyd",
-                        S_psv[:, :, :, :, :usedNe_source],
-                        M_source_t,
-                    )
-            else:  # t_sink is int
-                t_rel = (backend.asarray(t_source) - t_sink) % self.Lt
-                M_sink_t = M_sink[t_sink]  # [Ne_sink, Np, Nc]
-                M_source_t = M_source[t_rel]  # [Ne_source, Np, Nc]
-                if usedNe_sink == 0:
-                    term2 = 0
-                else:
-                    term2 = contract("ixc,abiyd->tabxcyd", M_sink_t, S_vsp_tilde)
-                if usedNe_source == 0:
-                    term3 = 0
-                else:
-                    term3 = contract(
-                        "abxcj,tjyd->tabxcyd",
-                        S_psv[:, :, :, :, :usedNe_source],
-                        M_source_t,
-                    )
-            tilde_S = term1 - term2 - term3
-            if should_cache_highmode:
-                if isinstance(t_source, int):
-                    if self.debug:
-                        logger.debug(f"caching full tilde_S_psp for t_source={t_source}")
-                    self.tilde_S_psp_cache = tilde_S
-                    self.tilde_S_psp_dagger = self._dagger_psp(tilde_S)
-                    self.tilde_S_psp_cached_time = t_source
-                else:  # t_sink is int
-                    if self.debug:
-                        logger.debug(f"caching full tilde_S_psp for t_sink={t_sink}")
-                    self.tilde_S_psp_cache = self._dagger_psp(tilde_S)
-                    self.tilde_S_psp_dagger = tilde_S
-                    self.tilde_S_psp_cached_time = t_sink
-
+            # Unreachable: the guard above rejects every multi-time request.  The
+            # branch is kept as an explicit refusal rather than deleted formula code,
+            # so nobody re-enables a projection that was never verified against the
+            # pointwise result (F7.3, F7.7).
+            raise NotImplementedError(
+                "array-time PSP high-mode blocks are not verified; loop the scanned "
+                "time and call this once per slice"
+            )
         log_gpu_memory(f"get_PSP_highmode(after, multi_time)")
         if self.debug:
             logger.debug(f"  tilde_S_psp shape: {tilde_S.shape}")
