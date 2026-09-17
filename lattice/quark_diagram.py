@@ -1670,13 +1670,19 @@ def compute_diagrams_multitime(
     propagator_list: List[Propagator],
     multitime_shape: int = False,
     debug: bool = False,
+    coefficients: List = None,
 ):
     """
     Compute diagram values with automatic sampling weight application.
 
-    This function automatically expands diagrams with current vertices into multiple
-    state combinations and point coincidence scenes. Each scene carries its own
-    coefficient that compensates for the finite sampling of spatial points.
+    When ``coefficients`` is given, ``diagrams`` is already the list of scene
+    contractions (one entry per sector x scene) and each is contracted with its own
+    subscripts and multiplied by its own coefficient.  That is the form
+    ``calc_diagram_prepare`` produces, and passing the coefficients explicitly keeps
+    the expansion in layer B instead of re-deriving it during evaluation.
+
+    Otherwise a Diagram carrying a current vertex is expanded here into its state
+    diagrams and their point-coincidence scenes.
 
     The coefficients are NOT ``w(k) = C(L^3,k)/C(usedNp,k)``. A scene's contraction
     merges subscripts, so it evaluates a free sum over its blocks and therefore also
@@ -1691,26 +1697,38 @@ def compute_diagrams_multitime(
     """
     backend = get_backend()
 
-    # Expand each diagram into its (sector x scene) units.  A state's scene list is
-    # the unit of iteration: the scenes carry the coincidence constraints and the
-    # coefficients, so consuming the state instead would drop both (02 SS8 gap 1/2).
-    diagrams_to_compute = []
-    for diagram in diagrams:
-        states = getattr(diagram, "expanded_diagrams", None) or []
-        if states:
-            for state in states:
-                scenes = getattr(state, "scene_diagrams", None) or []
-                if scenes:
-                    for scene, coefficient in zip(scenes, state.scene_weights):
-                        diagrams_to_compute.append((scene, coefficient))
+    if coefficients is not None:
+        if len(coefficients) != len(diagrams):
+            raise ValueError(
+                "coefficients must have one entry per scene contraction "
+                f"({len(diagrams)} diagrams, {len(coefficients)} coefficients)"
+            )
+        # Already expanded by calc_diagram_prepare: the units are the diagrams.
+        diagrams_to_compute = list(zip(diagrams, coefficients))
+    else:
+        # Expand each Diagram into its (sector x scene) contraction units.  The scene
+        # is the unit that carries the coincidence constraints and the coefficient,
+        # so consuming the state instead would drop both (02 SS8 gap 1/2).  A plain
+        # Diagram is not itself a contraction unit -- its inner QuarkDiagram is.
+        diagrams_to_compute = []
+        for diagram in diagrams:
+            for scene_diagram, coefficient in _scene_units(diagram):
+                unit = getattr(scene_diagram, "operands", None)
+                if unit is not None:
+                    diagrams_to_compute.append((scene_diagram, coefficient))
                 else:
-                    diagrams_to_compute.append((state, 1))
-        else:
-            diagrams_to_compute.append((diagram, 1))
+                    inner = getattr(scene_diagram, "diagram", None)
+                    if inner is None or not getattr(inner, "operands", None):
+                        raise ValueError(
+                            "a contraction unit must expose operands; got "
+                            f"{type(scene_diagram).__name__}"
+                        )
+                    diagrams_to_compute.append((inner, coefficient))
 
-    if debug and len(diagrams_to_compute) != len(diagrams):
+    if debug:
         logger.debug(
-            f"Total scene contractions: {len(diagrams_to_compute)} (from {len(diagrams)} input diagrams)"
+            f"Total scene contractions: {len(diagrams_to_compute)} "
+            f"(from {len(diagrams)} input diagrams)"
         )
 
     diagram_value = []
@@ -2907,8 +2925,63 @@ def _collect_diagrams(expr, diagram_list, save_dir, backend):
     return collect_diagrams(expr)
 
 
+def _remap_paths(value, propagator_map):
+    """Remap adjacency entries to combined propagator indices, recursively.
+
+    Baryon entries nest: ``matrix[i][j][source_quark][sink_quark]`` holds one
+    propagator index per quark pair.  A one-level comprehension cannot express
+    that and dies with "unhashable type: 'list'" (02 SS8 gap 8), so recurse on any
+    nested list rather than assuming a flat label list.
+    """
+    if isinstance(value, int):
+        return propagator_map[value] if value != 0 else 0
+    if isinstance(value, list):
+        return [_remap_paths(item, propagator_map) for item in value]
+    raise ValueError(f"invalid adjacency entry {value!r}")
+
+
+def _scene_units(diagram):
+    """Expand one Diagram into its (sector x scene) units with coefficients.
+
+    A Diagram carrying current vertices expands into state diagrams, and each state
+    expands into point-coincidence scenes.  The scene is the unit that carries the
+    coincidence constraints and the coefficient, so every consumer must iterate
+    scenes; consuming the state instead drops both (02 SS8 gap 1/2).
+
+    The expansion hangs off the inner ``QuarkDiagram`` (``diagram.diagram``), not off
+    the ``Diagram`` symbol itself: the symbol only carries the vertex/time lists.
+
+    Returns:
+        List of ``(scene_diagram, coefficient)``.  A plain diagram with no
+        expansion yields ``[(diagram, 1)]``.
+    """
+    inner = getattr(diagram, "diagram", None)
+    if inner is None:
+        # Nothing to contract: keep the pair so the caller still sees one unit.
+        return [(diagram, 1)]
+
+    states = getattr(inner, "expanded_diagrams", None) or []
+    if not states:
+        return [(diagram, 1)]
+
+    units = []
+    for state in states:
+        scenes = getattr(state, "scene_diagrams", None) or []
+        if scenes:
+            units.extend(zip(scenes, state.scene_weights))
+        else:
+            units.append((state, 1))
+    return units
+
+
 def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None):
-    """Build combined_diagrams, all_vertices, all_propagators, all_times (without time_map)."""
+    """Build combined_diagrams, all_vertices, all_propagators, all_times (without time_map).
+
+    ``combined_diagrams`` has one entry per scene contraction, and
+    ``prepared.scene_groups`` records which entries belong to which input diagram
+    together with each scene's coefficient.  Rebuilding the graph here without
+    that information is what used to collapse four sectors into one.
+    """
     all_propagators = []
     all_time_vertex_pairs = []
     pair_to_index = {}
@@ -2933,6 +3006,7 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None
         timing["n_unique_propagators"] = len(all_propagators)
 
     combined_diagrams = []
+    scene_coefficients_out = []
     original_to_new_time_vertex = {}
     original_to_new_propagator = {}
     t0 = perf_counter()
@@ -2951,28 +3025,50 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None
         timing["build_index_mapping"] = perf_counter() - t0
 
     t0 = perf_counter()
+    scene_ranges = []
     for diagram in diagram_list:
         did = id(diagram)
         n_vertices = len(all_time_vertex_pairs)
-        new_adjacency = [[0 for _ in range(n_vertices)] for _ in range(n_vertices)]
         tv_map = original_to_new_time_vertex[did]
-        prop_map = original_to_new_propagator[did]
         old_adjacency = diagram.diagram.adjacency_matrix
-        for i in range(len(diagram.time_list)):
-            for j in range(len(diagram.time_list)):
-                value = old_adjacency[i][j]
-                if value != 0:
-                    new_i = tv_map[i]
-                    new_j = tv_map[j]
-                    if isinstance(value, int):
-                        new_adjacency[new_i][new_j] = prop_map[value]
-                    elif isinstance(value, list):
-                        new_adjacency[new_i][new_j] = [
-                            (prop_map[v] if v != 0 else 0) for v in value
-                        ]
-        combined_diagrams.append(QuarkDiagram(new_adjacency, validate=False))
+        range_start = len(combined_diagrams)
+
+        # Rebuild one combined diagram per scene, carrying the scene's own
+        # subscripts, vertex types and coefficients.  The skeleton therefore keeps
+        # every sector: rebuilding once per input diagram would drop all but the
+        # first (02 SS8 gap 1).
+        for scene_diagram, coefficient in _scene_units(diagram):
+            # A scene unit is normally a SceneExpandedDiagram, which carries its own
+            # subscripts/types but not a propagator_list (its propagator indices live
+            # in ``operands``); the parent Diagram's list is the one to remap.
+            source = getattr(scene_diagram, "operands", None)
+            source_is_scene = source is not None
+            scene_prop_map = {
+                i: propagator_to_index[p]
+                for i, p in enumerate(diagram.propagator_list)
+            }
+            new_adjacency = [[0 for _ in range(n_vertices)] for _ in range(n_vertices)]
+            for i in range(len(diagram.time_list)):
+                for j in range(len(diagram.time_list)):
+                    value = old_adjacency[i][j]
+                    if value != 0:
+                        new_adjacency[tv_map[i]][tv_map[j]] = _remap_paths(
+                            value, scene_prop_map
+                        )
+            combined = QuarkDiagram(new_adjacency, validate=False)
+            if source_is_scene:
+                combined.operands = list(scene_diagram.operands)
+                combined.subscripts = list(scene_diagram.subscripts)
+                combined.propagator_types = list(scene_diagram.propagator_types)
+                combined.vertex_types = list(scene_diagram.vertex_types)
+                combined.vertex_infos = scene_diagram.vertex_infos
+                combined.scene_constraints = list(scene_diagram.scene_constraints or [])
+            combined_diagrams.append(combined)
+            scene_coefficients_out.append(coefficient)
+        scene_ranges.append((range_start, len(combined_diagrams)))
     if timing is not None:
         timing["build_adjacency"] = perf_counter() - t0
+        timing["n_scene_contractions"] = len(combined_diagrams)
 
     all_vertices = [pair[1] for pair in all_time_vertex_pairs]
     all_times = [pair[0] for pair in all_time_vertex_pairs]
@@ -2995,7 +3091,15 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None
             if timing is not None:
                 timing["propagator_map_replace"] = perf_counter() - t0
 
-    return combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices
+    return (
+        combined_diagrams,
+        all_vertices,
+        all_propagators,
+        all_times,
+        irrep_vertices,
+        scene_coefficients_out,
+        scene_ranges,
+    )
 
 
 def calc_diagram_prepare(
@@ -3035,12 +3139,18 @@ def calc_diagram_prepare(
         timing["n_diagrams"] = len(diagram_list)
 
     if not diagram_list:
-        return _CalcDiagramPrepared(expr=expr, diagram_list=[], combined_diagrams=[], all_vertices=[], all_propagators=[], all_times=[], irrep_vertices=[], save_dir=save_dir, debug=debug, backend=backend, timing=timing)
+        return _CalcDiagramPrepared(expr=expr, diagram_list=[], combined_diagrams=[], all_vertices=[], all_propagators=[], all_times=[], irrep_vertices=[], scene_coefficients=[], scene_ranges=[], save_dir=save_dir, debug=debug, backend=backend, timing=timing)
 
     build_timing = timing if timing is not None else None
-    combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices = _build_combined(
-        diagram_list, vertex_map, propagator_map, debug, timing=build_timing
-    )
+    (
+        combined_diagrams,
+        all_vertices,
+        all_propagators,
+        all_times,
+        irrep_vertices,
+        scene_coefficients_list,
+        scene_range_list,
+    ) = _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=build_timing)
     t_finalize = perf_counter()
     prepared = _CalcDiagramPrepared(
         expr=expr,
@@ -3050,6 +3160,8 @@ def calc_diagram_prepare(
         all_propagators=all_propagators,
         all_times=all_times,
         irrep_vertices=irrep_vertices,
+        scene_coefficients=scene_coefficients_list,
+        scene_ranges=scene_range_list,
         save_dir=save_dir,
         debug=debug,
         backend=backend,
@@ -3075,9 +3187,9 @@ def calc_diagram_prepare(
 class _CalcDiagramPrepared:
     """Holder for prepared diagram computation state."""
 
-    __slots__ = ("expr", "diagram_list", "combined_diagrams", "all_vertices", "all_propagators", "all_times", "irrep_vertices", "save_dir", "debug", "backend", "timing")
+    __slots__ = ("expr", "diagram_list", "combined_diagrams", "all_vertices", "all_propagators", "all_times", "irrep_vertices", "scene_coefficients", "scene_ranges", "save_dir", "debug", "backend", "timing")
 
-    def __init__(self, expr, diagram_list, combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices, save_dir, debug, backend, timing=None):
+    def __init__(self, expr, diagram_list, combined_diagrams, all_vertices, all_propagators, all_times, irrep_vertices, scene_coefficients=None, scene_ranges=None, save_dir=None, debug=False, backend=None, timing=None):
         self.expr = expr
         self.diagram_list = diagram_list
         self.combined_diagrams = combined_diagrams
@@ -3085,6 +3197,8 @@ class _CalcDiagramPrepared:
         self.all_propagators = all_propagators
         self.all_times = all_times
         self.irrep_vertices = irrep_vertices
+        self.scene_coefficients = scene_coefficients if scene_coefficients is not None else []
+        self.scene_ranges = scene_ranges if scene_ranges is not None else []
         self.save_dir = save_dir
         self.debug = debug
         self.backend = backend
@@ -3154,20 +3268,32 @@ def calc_diagram_eval(prepared: _CalcDiagramPrepared, time_map: Dict = None):
                 all_times[i] = time_map[t]
 
     if not prepared.debug:
-        results = compute_diagrams_multitime(
+        scene_results = compute_diagrams_multitime(
             prepared.combined_diagrams,
             all_times,
             prepared.all_vertices,
             prepared.all_propagators,
             multitime_shape=True,
+            coefficients=prepared.scene_coefficients or None,
         )
     else:
-        results = [
+        scene_results = [
             Symbol("result_{}".format(i)) for i in range(len(prepared.combined_diagrams))
         ]
 
-    for i, diagram in enumerate(diagram_list):
-        diagram.value = results[i]
+    # ``diagram_list`` holds one entry per distinct Diagram, while
+    # ``combined_diagrams`` holds one entry per scene contraction; a diagram's value
+    # is the sum over its scenes, each already weighted by its own coefficient.
+    if prepared.scene_ranges:
+        for i, diagram in enumerate(diagram_list):
+            start, stop = prepared.scene_ranges[i]
+            total = scene_results[start]
+            for result in scene_results[start + 1 : stop]:
+                total = total + result
+            diagram.value = total
+    else:
+        for i, diagram in enumerate(diagram_list):
+            diagram.value = scene_results[i]
 
     return _replace_diagrams(expr, diagram_list, save_dir, backend)
 
