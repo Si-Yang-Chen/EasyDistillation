@@ -48,6 +48,9 @@ __all__ = [
     "is_finer",
     "scene_coefficients",
     "expected_weight",
+    "observed_weight",
+    "CompensationScheme",
+    "SCHEMES",
 ]
 
 
@@ -114,6 +117,64 @@ def expected_weight(M: int, Np: int, k: int) -> Fraction:
         numerator *= M - step
         denominator *= Np - step
     return numerator / denominator
+
+
+class CompensationScheme:
+    """How the right-hand side of ``Z^T c = w`` is derived (01 SSF6).
+
+    The two schemes differ *only* in the denominator, so they share the scene
+    structure and the solver; a scheme is configuration, not an expansion axis.
+
+    ``EXPECTED`` counts how many k-tuples a draw is expected to contain, and is
+    design-unbiased for a fixed gauge field (the Horvitz-Thompson result).
+    ``OBSERVED`` counts how many it actually contains.  Observed is a ratio, so its
+    expectation is not the ratio of expectations and it is biased in general; it
+    does not assume equal-probability sampling, so it is the more robust choice for
+    non-uniform, stratified or structured point sets.  Which to use is a
+    bias-versus-variance trade the caller makes, not this module.
+    """
+
+    EXPECTED = "expected"
+    OBSERVED = "observed"
+
+
+SCHEMES = (CompensationScheme.EXPECTED, CompensationScheme.OBSERVED)
+
+
+def observed_weight(M, Np, k, observed_count):
+    """The scheme-O right-hand side for one scene: ``C(M,k) / observed_count``.
+
+    This is the observed-frequency counterpart of :func:`expected_weight`, which is
+    ``C(M,k) / C(Np,k)``: same numerator, and the denominator counts k-tuples that
+    actually occur rather than the number expected.  Feeding the expected count back
+    in therefore reproduces scheme E exactly -- a consistency property between the two
+    schemes, not evidence that either is right.
+
+    Note the denominator counts ORDERED tuples of distinct coordinates, matching the
+    falling factorials in :func:`expected_weight`.  A binomial coefficient is the
+    unordered count and would not reproduce scheme E.
+
+    ``observed_count`` comes from the caller's count source -- the data knows how many
+    k-tuples a group really contains; this module does not.
+
+    A zero count is an error, not a small weight: the term did not enter the sample,
+    so its inclusion probability has no estimate and the weight is undefined.
+    Returning 0 would silently drop the term and change the target, so this raises.
+    """
+    if k == 0:
+        return Fraction(1)
+    count = Fraction(observed_count)
+    if count <= 0:
+        raise ValueError(
+            f"observed count for k={k} distinct coordinates is {observed_count}: "
+            "the term did not enter the sample, so its weight is undefined rather "
+            "than zero (F6.4)"
+        )
+    possible = Fraction(1)
+    for step in range(k):
+        possible *= M - step
+    return possible / count
+
 
 
 def scene_coefficients(
