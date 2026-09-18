@@ -155,3 +155,21 @@ def test_scalar_calls_are_unaffected(blocks):
     vsp = np.asarray(prop.get_VSP_highmode(2, 3))
     assert vsp.shape == (4, 4, NE, NP, 3)
     assert np.isfinite(vsp).all()
+
+
+def test_a_missing_cache_is_not_subscripted(blocks):
+    """F7.7: an absent cached block must not surface as a TypeError.
+
+    ``get_VSP_highmode``'s multi-time branch read one cache's timestamp and then
+    subscripted the *other* cache's block.  When that block had never been computed it
+    was ``None`` and the call died with "NoneType is not subscriptable" -- an internal
+    error standing in for "this path is not supported", which is exactly what F7.7
+    forbids.  Each branch now checks the field it returns.
+    """
+    with pytest.raises(NotImplementedError):
+        _ready(blocks).get_PSP_highmode(2, np.arange(LT))
+
+    # And the supported PSP call still answers with a number.
+    value = np.asarray(_ready(blocks).get_PSP_highmode(2, 3))
+    assert value.shape == (4, 4, NP, 3, NP, 3)
+    assert np.isfinite(value).all()

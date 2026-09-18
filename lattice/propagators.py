@@ -1881,13 +1881,22 @@ class PropagatorWithCurrent(Propagator):
                     t_rel = (t_source - t_sink) % self.Lt
                     return self.tilde_S_psv_dagger[t_rel]
             else:
+                # A cached block may be absent, so each branch must check the field it
+                # actually returns.  Reading the other cache's timestamp and then
+                # subscripting a ``None`` is a TypeError, not an answer (F7.7).
                 if isinstance(t_source, int):
                     t_rel = (t_sink - t_source) % self.Lt
-                    if self.tilde_S_vsp_cached_time == t_source:
+                    if (
+                        self.tilde_S_vsp_cached_time == t_source
+                        and self.tilde_S_vsp_cache is not None
+                    ):
                         return self.tilde_S_vsp_cache[t_rel]
                 else:
                     t_rel = (t_source - t_sink) % self.Lt
-                    if self.tilde_S_vsp_cached_time == t_sink:
+                    if (
+                        self.tilde_S_psv_cached_time == t_sink
+                        and self.tilde_S_psv_dagger is not None
+                    ):
                         return self.tilde_S_psv_dagger[t_rel]
         # Get original VSP: S_{i,xa}
         # Cache unprojected when usedNe != self.usedNe (because we won't cache highmode)
