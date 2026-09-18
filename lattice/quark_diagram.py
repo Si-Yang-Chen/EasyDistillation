@@ -12,7 +12,14 @@ from sympy import Add, Mul, Pow, S, simplify
 import hashlib
 
 from lattice.spatial_structure import HadronIrrepRow
-from lattice.scene_coefficients import labelled_set_partitions, scene_coefficients
+from lattice.scene_coefficients import (
+    CompensationScheme,
+    SCHEMES,
+    blocks_of,
+    labelled_set_partitions,
+    observed_weight,
+    scene_coefficients,
+)
 
 from .backend import get_backend
 
@@ -537,6 +544,8 @@ class QuarkDiagram:
         debug: bool = False,
         validate: bool = True,
         leg_offsets: List = None,
+        compensation: str = None,
+        count_source: Callable = None,
     ) -> None:
         """
         Initialize QuarkDiagram.
@@ -547,6 +556,17 @@ class QuarkDiagram:
             L: Spatial lattice size (total number of lattice points = L^3)
             usedNp: Number of sampled points (default: usedNp from Current vertex)
             debug: Enable debug output
+            compensation: Which compensation scheme supplies the right-hand side of
+                the coefficient solve (01 F6): ``CompensationScheme.EXPECTED``
+                (default) or ``.OBSERVED``.  The two differ only in that denominator,
+                so the scene structure and the solve are shared.  Schemes must not be
+                mixed within one run.
+            count_source: Required by the observed scheme, ignored by the expected one.
+                A callable ``(count_source(positions, blocks, L, usedNp) -> int)``
+                returning how many k-tuples of distinct coordinates the data really
+                contains for one scene, where ``positions`` identifies the point ends
+                and ``blocks`` is that scene's partition into groups of positions.
+                The data knows this; the pipeline does not.
             validate: Check the quark-link invariants (every quark carries one
                 line, so a vertex is isolated, a meson, or a baryon at one end).
                 Pass False only for mechanical fragments that are not complete
@@ -562,6 +582,8 @@ class QuarkDiagram:
         self.adjacency_matrix = adjacency_matrix
         self.vertex_list = vertex_list
         self.leg_offsets = leg_offsets
+        self.compensation = compensation
+        self.count_source = count_source
         self.L = L  # Spatial lattice size
         self.usedNp = usedNp  # Number of sampled points
         self.operands = []
@@ -738,6 +760,8 @@ class QuarkDiagram:
                 usedNp=self.usedNp,
                 debug=self.debug,
                 leg_offsets=getattr(self, "leg_offsets", None),
+                compensation=getattr(self, "compensation", None),
+                count_source=getattr(self, "count_source", None),
             )
 
             # Expand this diagram into scenes (stored in new_diagram.scene_diagrams)
@@ -905,6 +929,8 @@ class StateExpandedDiagram(QuarkDiagram):
         usedNp: int = None,
         debug: bool = False,
         leg_offsets: List = None,
+        compensation: str = None,
+        count_source: Callable = None,
     ) -> None:
         """
         Initialize StateExpandedDiagram.
@@ -923,6 +949,8 @@ class StateExpandedDiagram(QuarkDiagram):
         self.adjacency_matrix = adjacency_matrix
         self.vertex_list = vertex_list
         self.leg_offsets = leg_offsets
+        self.compensation = compensation
+        self.count_source = count_source
         self.L = L
         self.usedNp = usedNp
         self.debug = debug
@@ -1467,11 +1495,38 @@ class StateExpandedDiagram(QuarkDiagram):
         # unbiased weight is the solution of the zeta inversion Z^T c = w on the
         # refinement order -- see lattice/scene_coefficients.py and 02 SS5.0.
         # At r = 1 it collapses to w(1), which is what this code used to assume.
+        #
+        # The two compensation schemes differ only in that right-hand side, so the
+        # choice enters here and nowhere else (01 F6).  The observed scheme needs a
+        # count source: the pipeline cannot know how many k-tuples the data holds.
+        scheme = self.compensation or CompensationScheme.EXPECTED
+        if scheme not in SCHEMES:
+            raise ValueError(
+                f"unknown compensation scheme {scheme!r}; expected one of {SCHEMES}"
+            )
+        if scheme == CompensationScheme.OBSERVED and self.count_source is None:
+            raise ValueError(
+                "the observed compensation scheme needs a count source: only the data "
+                "knows how many k-tuples of distinct coordinates a group contains "
+                "(01 F6.5)"
+            )
+
         group_scenes = {}
         for group_id, positions in self.sampling_groups.items():
             r = len(positions)
             partitions = labelled_set_partitions(r)
-            coefficients = scene_coefficients(r, M, N)
+            blocks = [blocks_of(partition) for partition in partitions]
+            if scheme == CompensationScheme.EXPECTED:
+                coefficients = scene_coefficients(r, M, N)
+            else:
+                # The observed scheme divides by the count the data reports for each
+                # scene; a zero count raises inside observed_weight rather than
+                # silently dropping the term.
+                weights = []
+                for block in blocks:
+                    observed = self.count_source(positions, block, M, N)
+                    weights.append(observed_weight(M, N, len(block), observed))
+                coefficients = scene_coefficients(r, M, N, weights=weights)
             group_scenes[group_id] = [
                 (partition, coefficient, positions)
                 for partition, coefficient in zip(partitions, coefficients)
@@ -3297,6 +3352,24 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None
     together with each scene's coefficient.  Rebuilding the graph here without
     that information is what used to collapse four sectors into one.
     """
+    # One run must use one compensation scheme (01 SS5 第 8 条).  The scheme decides
+    # every scene's coefficient, so mixing them would put different statistical
+    # characters in the same sum and no single provenance record could describe the
+    # result.  The scheme lives on each diagram, so the check belongs where the
+    # diagrams are gathered.
+    schemes = set()
+    for diagram in diagram_list:
+        inner = getattr(diagram, "diagram", diagram)
+        scheme = getattr(inner, "compensation", None)
+        if scheme is not None:
+            schemes.add(scheme)
+    if len(schemes) > 1:
+        raise ValueError(
+            f"all diagrams in one expression must share a compensation scheme, got "
+            f"{sorted(schemes)}: mixing them would sum terms with different "
+            f"statistical properties (01 F6.3)"
+        )
+
     all_propagators = []
     all_time_vertex_pairs = []
     pair_to_index = {}
