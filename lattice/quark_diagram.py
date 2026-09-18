@@ -1446,6 +1446,7 @@ class StateExpandedDiagram(QuarkDiagram):
                 L=M,  # M here represents total lattice points (L^3)
                 usedNp=N,
                 debug=self.debug,
+                vertex_terms=vertex_terms,
             )
             scene_diagram.unify_vertex_point_color_indices()
             self.scene_diagrams.append(scene_diagram)
@@ -1521,6 +1522,7 @@ class StateExpandedDiagram(QuarkDiagram):
                 L=M,  # M here represents total lattice points (L^3)
                 usedNp=N,
                 debug=self.debug,
+                vertex_terms=vertex_terms,
             )
             scene_diagram.unify_vertex_point_color_indices()
 
@@ -1674,6 +1676,7 @@ class SceneExpandedDiagram(QuarkDiagram):
         L: int = None,
         usedNp: int = None,
         debug: bool = False,
+        vertex_terms: tuple = None,
     ) -> None:
         """
         Initialize SceneExpandedDiagram.
@@ -1709,6 +1712,11 @@ class SceneExpandedDiagram(QuarkDiagram):
         # Initialize sampling-related fields
         self.sampling_groups = {}
         self.scene_constraints = scene_constraints
+        # Which offset class this scene was enumerated under.  The pool partition
+        # depends on it (a (0,0) class shares one pool, a (0,1) class does not), so the
+        # scene carries the choice forward: evaluation shifts each leg by it instead of
+        # re-deriving the classes and re-expanding (02 SS7 推论 2).
+        self.vertex_terms = vertex_terms
 
     def unify_vertex_point_color_indices(self) -> None:
         """
@@ -2005,20 +2013,23 @@ def compute_diagrams_multitime(
         combinations = [(tuple([((0, 0), [None])] * len(vertex_list)))]
 
     for diagram_idx, (diagram, scene_coefficient) in enumerate(diagrams_to_compute):
+        # The scene carries the offset-class choice it was enumerated under, so
+        # evaluation shifts each leg by it instead of re-deriving the classes.  A
+        # scene that never split its legs carries the (0,0) class, which shifts
+        # nothing and keeps a meson's arithmetic byte-identical (F7.1).
+        vertex_terms = getattr(diagram, "vertex_terms", None)
+        if vertex_terms is None:
+            vertex_terms = tuple([((0, 0), [None])] * len(vertex_list))
         if debug:
             logger.debug(f"\n{'='*80}")
             logger.debug(f"Processing scene contraction {diagram_idx}")
             logger.debug(f"  coefficient: {scene_coefficient}")
-            logger.debug(f"  offset-class combinations: {len(combinations)}")
+            logger.debug(f"  vertex terms: {vertex_terms}")
             logger.debug(f"{'='*80}")
-        # Each offset-class combination is one term block of the splitting vertices.
-        # A contraction is linear in a vertex block, so the classes are **summed**;
-        # multiplying them would be wrong as soon as a vertex has two classes.  A
-        # vertex that never splits its legs yields exactly one combination, so a
-        # meson and an equal-time current stay a single contraction with unchanged
-        # arithmetic (F2.3, F7.1).
+        # One contraction per scene: the offset classes were summed over when the
+        # scene was expanded, so there is nothing left to combine here (F2.3, F7.1).
         scene_total = 0
-        for vertex_terms in combinations:
+        for _ in (None,):
             combination_value = 1.0
             for contraction_idx, (operands, subscripts) in enumerate(
                 zip(diagram.operands, diagram.subscripts)
@@ -3257,14 +3268,16 @@ def _scene_units(diagram):
         List of ``(scene_diagram, coefficient)``.  A plain diagram with no
         expansion yields ``[(diagram, 1)]``.
     """
+    # Accept either a Diagram symbol (which wraps a QuarkDiagram) or a bare
+    # QuarkDiagram: callers reach this through both routes.
     inner = getattr(diagram, "diagram", None)
     if inner is None:
-        # Nothing to contract: keep the pair so the caller still sees one unit.
-        return [(diagram, 1)]
+        inner = diagram
 
     states = getattr(inner, "expanded_diagrams", None) or []
     if not states:
-        return [(diagram, 1)]
+        # Nothing to expand: one unit, and the substrate is whatever can contract.
+        return [(inner if getattr(inner, "operands", None) else diagram, 1)]
 
     units = []
     for state in states:
@@ -3343,8 +3356,10 @@ def _build_combined(diagram_list, vertex_map, propagator_map, debug, timing=None
             # A scene unit is normally a SceneExpandedDiagram, which carries its own
             # subscripts/types but not a propagator_list (its propagator indices live
             # in ``operands``); the parent Diagram's list is the one to remap.
-            source = getattr(scene_diagram, "operands", None)
-            source_is_scene = source is not None
+            # A scene carries its own subscripts, vertex types and vertex_infos; a
+            # plain QuarkDiagram carries operands but no vertex_infos, so test for the
+            # marker that actually distinguishes them.
+            source_is_scene = getattr(scene_diagram, "vertex_infos", None) is not None
             scene_prop_map = {
                 i: propagator_to_index[p]
                 for i, p in enumerate(diagram.propagator_list)

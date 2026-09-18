@@ -93,9 +93,20 @@ class _Propagator:
         return np.full((4, 4, 2, 3, 2, 3), self.value, complex)
 
 
-def _loop_diagram():
-    """A two-vertex loop with no current marking, so no sector expansion runs."""
-    return QuarkDiagram([[0, 1], [1, 0]], vertex_list=None, L=2, usedNp=2)
+def _loop_diagram(leg_offsets=None, vertex_list=None):
+    """A two-vertex loop.
+
+    ``vertex_list`` marks which vertices are current-capable, which is also what makes
+    the diagram expand into states and scenes -- so declaring ``leg_offsets`` without a
+    marking expands nothing.  One entry per vertex in both lists.
+    """
+    return QuarkDiagram(
+        [[0, 1], [1, 0]],
+        vertex_list=vertex_list,
+        L=2,
+        usedNp=2,
+        leg_offsets=leg_offsets,
+    )
 
 
 def test_temporal_conserved_current_has_two_offset_classes():
@@ -157,18 +168,26 @@ def test_leg_times_follow_the_anchor_and_the_offset():
 def test_a_split_vertex_requests_both_endpoint_pairs():
     """Each offset class fetches its own propagator times, so the split is real.
 
-    With one splitting vertex the contraction count doubles and the propagator sees
-    both endpoint pairs; a single fetch would mean the offsets were computed and
-    then ignored.
+    The classes are declared on the graph, because they decide the pool partition and
+    therefore the scene enumeration -- so the skeleton owns them and evaluation reads
+    the choice off each scene rather than re-deriving it (02 SS7).  A single fetch
+    would mean the offsets were computed and then ignored.
     """
     set_backend("numpy")
+    temporal = [((0, 1), [0]), ((1, 0), [1])]
     vertex = _Terms(ConservedVectorCurrent(wilson_r=1.0).terms[6:8])
     propagator = _Propagator()
+    # The split vertex must be marked as current-capable: expanding the offset
+    # classes requires the state expansion, which is what ``vertex_list`` drives.
+    diagram = QuarkDiagram(
+        [[0, 1], [1, 0]], vertex_list=[0, 1], L=2, usedNp=2,
+        leg_offsets=[None, temporal],
+    )
     values = compute_diagrams_multitime(
-        [_loop_diagram()], [0, 3], [_PlainVertex(), vertex], [None, propagator]
+        [diagram], [0, 3], [_PlainVertex(), vertex], [None, propagator]
     )
 
-    asked = sorted(propagator.calls)
+    asked = sorted(set(propagator.calls))
     assert asked == [(0, 3), (0, 4), (3, 0), (4, 0)], (
         f"expected both endpoint pairs, got {asked}"
     )
@@ -180,24 +199,42 @@ def test_an_equal_time_vertex_requests_one_endpoint_pair():
     set_backend("numpy")
     vertex = _Terms(ConservedVectorCurrent(wilson_r=1.0).terms[0:2])
     propagator = _Propagator()
+    # One class, shaped exactly as offset_classes returns it: [(offsets, indices)].
+    equal_time = [((0, 0), [0, 1])]
     compute_diagrams_multitime(
-        [_loop_diagram()], [0, 3], [_PlainVertex(), vertex], [None, propagator]
+        [_loop_diagram(leg_offsets=[None, equal_time], vertex_list=[0, 1])],
+        [0, 3],
+        [_PlainVertex(), vertex],
+        [None, propagator],
     )
-    assert sorted(propagator.calls) == [(0, 3), (3, 0)]
+    assert sorted(set(propagator.calls)) == [(0, 3), (3, 0)]
 
 
 def test_multiple_split_vertices_multiply_the_offset_classes():
     """F2.3: enumerate every class combination, exactly, with no approximation."""
     set_backend("numpy")
-    temporal = ConservedVectorCurrent(wilson_r=1.0).terms[6:8]
-    left = _Terms(temporal)
-    right = _Terms(temporal)
+    temporal = [((0, 1), [0]), ((1, 0), [1])]
+    terms = ConservedVectorCurrent(wilson_r=1.0).terms[6:8]
     propagator = _Propagator()
-    compute_diagrams_multitime(
-        [_loop_diagram()], [0, 3], [left, right], [None, propagator]
+    diagram = QuarkDiagram(
+        [[0, 1], [1, 0]], vertex_list=[1, 2], L=2, usedNp=2,
+        leg_offsets=[temporal, temporal],
     )
-    # Two splitting vertices at two classes each: four combinations, two lines each.
-    assert len(propagator.calls) == 8
+    compute_diagrams_multitime(
+        [diagram], [0, 3], [_Terms(terms), _Terms(terms)], [None, propagator]
+    )
+    # Each split vertex shifts its own leg, and each vertex offers two classes, so
+    # each quark line sees 2 x 2 = 4 endpoint pairs; two lines in opposite directions
+    # makes eight.  Counting distinct pairs rather than raw calls isolates the
+    # offset-class axis from the sector axis, which marking also turns on.
+    offsets = (0, 1)                     # the two leg shifts this class pair offers
+    forward = {(s, k) for s in offsets for k in (3 + d for d in offsets)}
+    backward = {(k, s) for s in offsets for k in (3 + d for d in offsets)}
+    expected = forward | backward
+    assert set(propagator.calls) == expected, (
+        f"offset classes must enumerate exactly these pairs, got {sorted(set(propagator.calls))}"
+    )
+    assert len(expected) == 8
 
 
 def test_offset_classes_need_a_term_count_or_terms():
