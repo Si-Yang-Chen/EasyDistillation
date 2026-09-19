@@ -1,0 +1,67 @@
+{
+  "lt": 8,
+  "elementals": {
+    "default": {
+      "kind": "elemental",
+      "prefix": "test/",
+      "suffix": ".elemental.npy",
+      "shape": [13, 6, 8, 20, 20],
+      "tot_ne": 20
+    },
+    "disp": {
+      "kind": "elemental",
+      "prefix": "test/",
+      "suffix": ".displacement_elemental.npy",
+      "shape": [9, 6, 8, 20, 20],
+      "tot_ne": 20
+    }
+  },
+  "perambulators": {
+    "q": {
+      "kind": "perambulator",
+      "format": "npy",
+      "prefix": "test/",
+      "suffix": ".perambulator.npy",
+      "shape": [8, 8, 4, 4, 20, 20],
+      "tot_ne": 20
+    }
+  },
+  "propagator_types": {"q": "both"},
+  "mom_dict": "mom1",
+  "hadron_defs": {
+    "pi": {"gamma": "PI", "derivative": "IDEN", "rest_irrep": "A_1", "elemental": "default"},
+    "rho": {"gamma": "RHO", "derivative": "IDEN", "rest_irrep": "T_1", "elemental": "default"},
+    "pi_disp": {
+      "gamma": "PI", "derivative": "IDEN", "rest_irrep": "A_1",
+      "elemental": "disp", "distance": 8
+    }
+  },
+  "channels": [
+    {
+      "comment": "single hadron (pion-like, 0-+, A_1) at rest",
+      "hadrons": [
+        {"name": "pi", "flavor": "ud", "momentum": [0, 0, 0], "irrep": "A_1", "parity": -1}
+      ],
+      "rows": [0]
+    },
+    {
+      "comment": "single hadron built from displacement elemental (OperatorDisplacement branch)",
+      "hadrons": [
+        {"name": "pi_disp", "flavor": "ud", "momentum": [0, 0, 0], "irrep": "A_1", "parity": -1}
+      ],
+      "rows": [0]
+    },
+    {
+      "comment": "single vector hadron (rho-like, 1--, T_1), all three rows as separate operators",
+      "hadrons": [
+        {"name": "rho", "flavor": "ud", "momentum": [0, 0, 0], "irrep": "T_1", "parity": -1}
+      ],
+      "rows": [0, 1, 2]
+    }
+  ],
+  "group_elements": ["iden", "c4x", "c4y", "c4z"],
+  "remove_disconnected": [],
+  "times": [0, 1],
+  "time_roles": ["src", "snk"],
+  "dagger": [false, true]
+}

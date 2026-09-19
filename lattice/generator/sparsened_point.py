@@ -6,7 +6,10 @@ from typing import List, Optional
 import numpy as np
 
 
-def generate_sparsened_points(latt_size: List[int], num_points: int, seed: Optional[int] = None) -> np.ndarray:
+def generate_sparsened_points(
+    latt_size: List[int], num_points: int, seed: Optional[int] = None,
+    temporal_policy: str = "independent",
+) -> np.ndarray:
     """
     Generate random sparsened points on a lattice.
 
@@ -25,6 +28,10 @@ def generate_sparsened_points(latt_size: List[int], num_points: int, seed: Optio
     num_points : int
         Number of spatial points to generate per time slice (Np).
         Must satisfy: 0 < num_points ≤ Lx × Ly × Lz
+
+    temporal_policy : {"independent", "same"}, default="independent"
+        Whether each time slice receives an independent spatial point set or
+        all time slices reuse the same spatial point set.
 
     seed : Optional[int], default=None
         Random seed for reproducibility.
@@ -71,6 +78,8 @@ def generate_sparsened_points(latt_size: List[int], num_points: int, seed: Optio
     # Validate input
     if len(latt_size) != 4:
         raise ValueError(f"latt_size must have 4 elements, got {len(latt_size)}")
+    if temporal_policy not in ("independent", "same"):
+        raise ValueError(f"temporal_policy must be 'independent' or 'same', got {temporal_policy!r}")
 
     Lx, Ly, Lz, Lt = latt_size
     spatial_volume = Lx * Ly * Lz
@@ -90,7 +99,16 @@ def generate_sparsened_points(latt_size: List[int], num_points: int, seed: Optio
     # Initialize output array
     coords = np.zeros((num_points, Lt, 3), dtype=np.int32)
 
-    # Generate points for each time slice
+    # Generate one spatial set when requested, then reuse it for every time.
+    if temporal_policy == "same":
+        flat = np.random.choice(spatial_volume, size=num_points, replace=False)
+        spatial = np.stack(
+            [flat % Lx, (flat // Lx) % Ly, flat // (Lx * Ly)], axis=1
+        ).astype(np.int32)
+        coords[:] = spatial[:, None, :]
+        return coords
+
+    # Generate points independently for each time slice
     for t in range(Lt):
         # Track used coordinates to ensure uniqueness
         used_points = set()

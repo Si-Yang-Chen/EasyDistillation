@@ -1,0 +1,45 @@
+{
+  "comment": "moving-momentum two-hadron channel; symbolic only (use with --dry-run when elemental data has no moving-momentum slots)",
+  "lt": 8,
+  "elementals": {
+    "default": {
+      "kind": "elemental",
+      "prefix": "test/",
+      "suffix": ".elemental.npy",
+      "shape": [13, 6, 8, 20, 20],
+      "tot_ne": 20
+    }
+  },
+  "perambulators": {
+    "q": {
+      "kind": "perambulator",
+      "format": "npy",
+      "prefix": "test/",
+      "suffix": ".perambulator.npy",
+      "shape": [8, 8, 4, 4, 20, 20],
+      "tot_ne": 20
+    }
+  },
+  "propagator_types": {"q": "nonlocal"},
+  "mom_dict": "mom3",
+  "hadron_defs": {
+    "rho": {"gamma": "RHO", "derivative": "IDEN", "rest_irrep": "T_1", "elemental": "default"},
+    "pi": {"gamma": "PI", "derivative": "IDEN", "rest_irrep": "A_1", "elemental": "default"}
+  },
+  "channels": [
+    {
+      "comment": "moving pair: rho longitudinal at [0,0,1] (C4v A_1) x pion at [0,0,-1] (C4v A_2), total momentum 0, projected to E row 0 (same structure as t2pp production channels)",
+      "hadrons": [
+        {"name": "rho", "flavor": "ud", "momentum": [0, 0, 1], "irrep": "A_1", "parity": null},
+        {"name": "pi", "flavor": "ud", "momentum": [0, 0, -1], "irrep": "A_2", "parity": null}
+      ],
+      "target": {"irrep": "E", "row": 0, "parity": null},
+      "flavor": "ud*ud"
+    }
+  ],
+  "group_elements": ["iden", "c4x", "c4y", "c4z"],
+  "remove_disconnected": ["S^q_\\mathrm{local}"],
+  "times": [0, 1],
+  "time_roles": ["src", "snk"],
+  "dagger": [false, true]
+}
